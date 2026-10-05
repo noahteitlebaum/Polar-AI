@@ -1,7 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { isAllowedEmail } from "./eligibility";
+import { accessFor, type Access } from "./access";
 
-// Server-side source of truth for "may this request use the app?".
+// Server-side source of truth for "is this a verified @uwo.ca account?".
 // Every page, server action and API route that touches chats, credits or models must call this.
 export async function getEligibleUser() {
   const supabase = await createClient();
@@ -12,4 +13,11 @@ export async function getEligibleUser() {
   if (!user.email_confirmed_at) return null;
   if (!isAllowedEmail(user.email)) return null;
   return user;
+}
+
+// Verified user plus whether they're let into the app or held on the waitlist.
+export async function getUserAccess(): Promise<{ user: NonNullable<Awaited<ReturnType<typeof getEligibleUser>>>; access: Access } | null> {
+  const user = await getEligibleUser();
+  if (!user) return null;
+  return { user, access: accessFor(user.email) };
 }

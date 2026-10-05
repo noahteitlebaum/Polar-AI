@@ -42,7 +42,7 @@ export async function proxy(request: NextRequest) {
 }
 
 function isPublicPath(path: string) {
-  return path.startsWith("/login") || path.startsWith("/auth/");
+  return ["/login", "/signup", "/reset", "/auth/"].some((p) => path === p || path.startsWith(p.endsWith("/") ? p : `${p}/`));
 }
 
 export const config = {

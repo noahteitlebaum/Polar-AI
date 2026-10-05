@@ -26,6 +26,7 @@ npm run test:live  # small opt-in live checks against all 4 providers (costs mon
 ## Hard rules (never violate)
 1. **API keys stay on the server.** Never send them to the client, logs, or prompts. Use env vars only.
 2. **Access:** only users who have verified an email at the exact domain `uwo.ca` may get credits or call a model. Enforce this on the server, not just in the UI. Reject subdomains and lookalike domains (`uwo.ca.evil.com`, `xuwo.ca`, unicode lookalikes).
+2a. **Waitlist:** while `WAITLIST_MODE` is on, only emails in `EARLY_ACCESS_EMAILS` reach the app; everyone else sees `/waitlist`. Enforce with `getUserAccess()` on every page and API route that uses models.
 3. **Ownership:** a user can only read or write their own conversations. Enforce with RLS **and** server checks.
 4. **Budget:** every model call does an atomic reserve → call → reconcile against a dollar budget (see ARCHITECTURE.md). Don't make a provider call without a reservation.
 5. **No silent model substitution.** If a provider fails, show an error and let the student choose another model.

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { MODELS, DEFAULT_MODEL_ID, getModel } from "@/config/models";
 import { signOut } from "../login/actions";
 
@@ -34,6 +35,7 @@ function loadChats(): Conversation[] {
 }
 
 export function ChatApp({ email }: { email: string }) {
+  const router = useRouter();
   const [chats, setChats] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [draftModel, setDraftModel] = useState(DEFAULT_MODEL_ID);
@@ -45,7 +47,10 @@ export function ChatApp({ email }: { email: string }) {
   const loaded = useRef(false);
 
   useEffect(() => {
+    // Load once after hydration (localStorage doesn't exist on the server).
+    // Temporary until chats are stored in the database.
     const saved = loadChats();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setChats(saved);
     setActiveId(saved[0]?.id ?? null);
     loaded.current = true;
@@ -129,8 +134,11 @@ export function ChatApp({ email }: { email: string }) {
         }),
         signal: controller.signal,
       });
-      if (res.status === 401 || res.redirected) {
-        window.location.href = "/login"; // session expired
+      if (res.status === 401 || res.status === 403 || res.redirected) {
+        // Signed out or waitlisted: reload "/" and let the server decide where to go.
+        patchReply((m) => ({ ...m, status: "error" }));
+        router.replace("/");
+        router.refresh();
         return;
       }
       if (!res.ok || !res.body) throw new Error(String(res.status));

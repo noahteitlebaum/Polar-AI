@@ -1,4 +1,4 @@
-import { getEligibleUser } from "@/lib/auth/session";
+import { getUserAccess } from "@/lib/auth/session";
 import { getModel } from "@/config/models";
 
 // MOCK provider: streams a fake reply so the UI can be built before API keys arrive.
@@ -6,8 +6,10 @@ import { getModel } from "@/config/models";
 type IncomingMessage = { role: "user" | "assistant"; content: string; modelId?: string };
 
 export async function POST(request: Request) {
-  const user = await getEligibleUser();
-  if (!user) return Response.json({ error: "not_signed_in" }, { status: 401 });
+  const result = await getUserAccess();
+  if (!result) return Response.json({ error: "not_signed_in" }, { status: 401 });
+  // Waitlisted accounts must not reach any model, even by calling the API directly.
+  if (result.access !== "app") return Response.json({ error: "waitlisted" }, { status: 403 });
 
   const body = (await request.json().catch(() => null)) as
     | { modelId?: string; messages?: IncomingMessage[] }

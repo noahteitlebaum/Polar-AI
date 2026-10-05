@@ -1,73 +1,65 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { isAllowedEmail, normalizeEmail } from "@/lib/auth/eligibility";
+import { friendlyAuthError, logAuthError } from "@/lib/auth/errors";
+import { resendSignupCode, verifyEmailCode } from "@/lib/auth/flows";
 
-export type LoginState = {
-  step: "email" | "code";
+export type SignInState = {
+  step: "credentials" | "verify";
   email: string;
   error?: string;
   message?: string;
 };
 
-async function sendCode(_prev: LoginState, formData: FormData): Promise<LoginState> {
-  const email = normalizeEmail(String(formData.get("email") ?? ""));
+const NOT_UWO = "Polar AI is only open to @uwo.ca email addresses.";
 
-  // Server-side check: the browser can't skip this.
-  if (!isAllowedEmail(email)) {
-    return { step: "email", email, error: "Polar AI is only open to @uwo.ca email addresses." };
+export async function signInAction(prev: SignInState, formData: FormData): Promise<SignInState> {
+  const intent = String(formData.get("intent") ?? "signin");
+  const email = normalizeEmail(String(formData.get("email") ?? prev.email ?? ""));
+
+  if (intent === "back") return { step: "credentials", email };
+  if (!isAllowedEmail(email)) return { step: "credentials", email, error: NOT_UWO };
+
+  // Account exists but email was never confirmed: finish verification here.
+  if (intent === "verify") {
+    const problem = await verifyEmailCode(email, String(formData.get("code") ?? ""));
+    if (problem) return { step: "verify", email, error: problem };
+    redirect("/");
+  }
+  if (intent === "resend") {
+    const problem = await resendSignupCode(email);
+    return problem
+      ? { step: "verify", email, error: problem }
+      : { step: "verify", email, message: `We sent a new code to ${email}.` };
   }
 
-  const origin = (await headers()).get("origin") ?? process.env.NEXT_PUBLIC_SITE_URL ?? "";
-  const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
-    // The email has a sign-in link that comes back to /auth/callback.
-    // (Once custom SMTP is set up, the email can also show a typed code.)
-    options: { shouldCreateUser: true, emailRedirectTo: `${origin}/auth/callback` },
-  });
-
-  if (error) {
-    console.error("sendCode failed", { code: error.code, status: error.status });
-    return { step: "email", email, error: "We couldn't send a code right now. Try again in a minute." };
-  }
-
-  return { step: "code", email, message: `We sent a sign-in link to ${email}. Open it on this device.` };
-}
-
-async function verifyCode(_prev: LoginState, formData: FormData): Promise<LoginState> {
-  const email = normalizeEmail(String(formData.get("email") ?? ""));
-  const token = String(formData.get("code") ?? "").replace(/\s/g, "");
-
-  if (!isAllowedEmail(email)) {
-    return { step: "email", email, error: "Polar AI is only open to @uwo.ca email addresses." };
-  }
-  if (!/^\d{6,10}$/.test(token)) {
-    return { step: "code", email, error: "Enter the code from your email." };
-  }
+  const password = String(formData.get("password") ?? "");
+  if (!password) return { step: "credentials", email, error: "Enter your password." };
 
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.verifyOtp({ email, token, type: "email" });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
+  if (error?.code === "email_not_confirmed") {
+    const problem = await resendSignupCode(email);
+    return {
+      step: "verify",
+      email,
+      error: problem ?? undefined,
+      message: problem ? undefined : `Your email isn't verified yet. We sent a code to ${email}.`,
+    };
+  }
   if (error || !data.user) {
-    return { step: "code", email, error: "That code is wrong or expired. Try again or request a new one." };
+    if (error && error.code !== "invalid_credentials") logAuthError("signInWithPassword", error);
+    return { step: "credentials", email, error: friendlyAuthError(error, "signin") };
   }
-
-  // Double-check the verified account itself.
   if (!isAllowedEmail(data.user.email)) {
     await supabase.auth.signOut();
-    return { step: "email", email: "", error: "Polar AI is only open to @uwo.ca email addresses." };
+    return { step: "credentials", email: "", error: NOT_UWO };
   }
 
   redirect("/");
-}
-
-// One entry point so the form keeps a single state.
-export async function loginAction(prev: LoginState, formData: FormData): Promise<LoginState> {
-  if (formData.get("intent") === "restart") return { step: "email", email: "" };
-  return formData.get("intent") === "verify" ? verifyCode(prev, formData) : sendCode(prev, formData);
 }
 
 export async function signOut() {

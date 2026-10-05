@@ -1,15 +1,14 @@
 "use client";
 
-import Link from "next/link";
 import { useActionState } from "react";
 import { Field, FormAlert, linkButtonClass, primaryButtonClass } from "@/components/auth-ui";
-import { signInAction, type SignInState } from "./actions";
+import { PASSWORD_MIN } from "@/lib/auth/password";
+import { signUpAction, type SignUpState } from "./actions";
 
-export function LoginForm({ initialMessage }: { initialMessage?: string }) {
-  const [state, action, pending] = useActionState<SignInState, FormData>(signInAction, {
-    step: "credentials",
+export function SignUpForm() {
+  const [state, action, pending] = useActionState<SignUpState, FormData>(signUpAction, {
+    step: "details",
     email: "",
-    message: initialMessage,
   });
 
   if (state.step === "verify") {
@@ -20,14 +19,14 @@ export function LoginForm({ initialMessage }: { initialMessage?: string }) {
         <Field label="Verification code" id="code" required autoComplete="one-time-code" inputMode="numeric"
           maxLength={10} placeholder="123456" autoFocus />
         <button type="submit" name="intent" value="verify" disabled={pending} className={primaryButtonClass}>
-          {pending ? "Checking…" : "Verify and sign in"}
+          {pending ? "Checking…" : "Verify email"}
         </button>
         <div className="flex justify-between">
           <button type="submit" name="intent" value="resend" formNoValidate disabled={pending} className={linkButtonClass}>
             Send a new code
           </button>
           <button type="submit" name="intent" value="back" formNoValidate disabled={pending} className={linkButtonClass}>
-            Back
+            Change email
           </button>
         </div>
       </form>
@@ -39,14 +38,12 @@ export function LoginForm({ initialMessage }: { initialMessage?: string }) {
       <FormAlert error={state.error} message={state.message} />
       <Field label="Western email" id="email" type="email" required autoComplete="email" inputMode="email"
         placeholder="you@uwo.ca" defaultValue={state.email} key={state.email} />
-      <Field label="Password" id="password" type="password" required autoComplete="current-password" />
-      <div className="-mt-2 text-right">
-        <Link href="/reset" className="text-sm text-zinc-600 underline underline-offset-2 dark:text-zinc-400">
-          Forgot password?
-        </Link>
-      </div>
-      <button type="submit" name="intent" value="signin" disabled={pending} className={primaryButtonClass}>
-        {pending ? "Signing in…" : "Sign in"}
+      <Field label="Password" id="password" type="password" required autoComplete="new-password"
+        minLength={PASSWORD_MIN} hint={`At least ${PASSWORD_MIN} characters, with a letter and a number.`} />
+      <Field label="Confirm password" id="confirm" type="password" required autoComplete="new-password"
+        minLength={PASSWORD_MIN} />
+      <button type="submit" name="intent" value="signup" disabled={pending} className={primaryButtonClass}>
+        {pending ? "Creating account…" : "Create account"}
       </button>
     </form>
   );

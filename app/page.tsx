@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
-import { getEligibleUser } from "@/lib/auth/session";
+import { getUserAccess } from "@/lib/auth/session";
 import { ChatApp } from "./chat/chat-app";
 
 export default async function Home() {
-  const user = await getEligibleUser();
-  if (!user) redirect("/login");
-  return <ChatApp email={user.email ?? ""} />;
+  const result = await getUserAccess();
+  if (!result) redirect("/login");
+  if (result.access === "waitlist") redirect("/waitlist");
+  return <ChatApp email={result.user.email ?? ""} />;
 }
