@@ -15,7 +15,7 @@ export const google: ProviderAdapter = {
         systemInstruction: { parts: [{ text: system }] },
         contents: normalizeTurns(history).map((t) => ({
           role: t.role === "assistant" ? "model" : "user",
-          parts: [{ text: t.content }],
+          parts: [...(t.images ?? []).map((i) => ({ inlineData: { mimeType: i.mime, data: i.data } })), { text: t.content || " " }],
         })),
         generationConfig: { maxOutputTokens: maxOutput },
       }),

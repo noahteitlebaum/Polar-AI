@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   events: [] as unknown[],
   failBeforeStart: false,
   reserveOk: true,
+  lastArgs: null as null | { system: string; history: { role: string; content: string; images?: unknown[] }[] },
 }));
 
 vi.mock("@/lib/api", async (orig) => ({
@@ -29,7 +30,8 @@ vi.mock("@/lib/providers", () => ({
   ADAPTERS: {
     anthropic: {
       id: "anthropic",
-      async *stream(): AsyncGenerator<StreamEvent> {
+      async *stream(args: { system: string; history: { role: string; content: string }[] }): AsyncGenerator<StreamEvent> {
+        state.lastArgs = args;
         if (state.failBeforeStart) throw new ProviderError("unavailable", 503);
         for (const e of state.events as StreamEvent[]) yield e;
       },
@@ -66,7 +68,7 @@ describe("POST /api/chat", () => {
     const res = await POST(req({ provider: "anthropic", modelId: "anthropic-default", content: "hello" }));
     const events = await readEvents(res);
     expect(events[0]).toMatchObject({ t: "meta", title: "hello" });
-    expect(events.at(-1)).toEqual({ t: "done", status: "complete" });
+    expect(events.at(-1)).toMatchObject({ t: "done", status: "complete" });
     const { db } = state.fake!;
     expect(db.conversations).toHaveLength(1);
     expect(db.conversations[0]).toMatchObject({ provider: "anthropic", user_id: "user-1" });
@@ -131,5 +133,72 @@ describe("POST /api/chat", () => {
     const first = await readEvents(await POST(req({ provider: "anthropic", modelId: "anthropic-default", content: "q" })));
     const res = await POST(req({ provider: "openai", modelId: "openai-default", content: "q2", conversationId: first[0].conversationId }));
     expect(res.status).toBe(400);
+  });
+
+  describe("files", () => {
+    const seedFile = (over: Record<string, unknown> = {}) => {
+      const f = { id: crypto.randomUUID(), user_id: "user-1", name: "lecture3.pdf", kind: "document", status: "ready", char_count: 200, page_count: 2, project_id: null, conversation_id: null, storage_path: "p", mime: "application/pdf", ...over };
+      state.fake!.db.files.push(f);
+      return f;
+    };
+
+    it("attaches an upload to the chat, sends its passages, and keeps only cited sources", async () => {
+      state.live = true;
+      state.events = [{ delta: "Stratified sampling splits into strata [S1]." }, { usage: { input: 10, output: 10, reasoning: 0, cached: 0 } }];
+      const f = seedFile();
+      state.fake!.db.file_chunks.push(
+        { id: "c1", file_id: f.id, page: 1, chunk_index: 0, content: "Stratified sampling divides the population into strata." },
+        { id: "c2", file_id: f.id, page: 2, chunk_index: 1, content: "Cluster sampling picks whole groups." },
+      );
+      const events = await readEvents(await POST(req({ provider: "anthropic", modelId: "anthropic-default", content: "Explain this", attachmentIds: [f.id] })));
+      expect(state.fake!.db.files[0].conversation_id).toBe(events[0].conversationId);
+      expect(state.lastArgs!.system).toContain("[S1] lecture3.pdf, p. 1");
+      expect(state.lastArgs!.system).toContain("[S2] lecture3.pdf, p. 2");
+      const done = events.at(-1);
+      expect(done.sources.map((x: { label: string }) => x.label)).toEqual(["lecture3.pdf, p. 1"]); // S2 wasn't cited
+      expect(state.fake!.db.messages[0].attachment_ids).toEqual([f.id]);
+    });
+
+    it("won't attach someone else's or an already-used file", async () => {
+      const used = seedFile({ conversation_id: "other-chat" });
+      await readEvents(await POST(req({ provider: "anthropic", modelId: "anthropic-default", content: "hi", attachmentIds: [used.id] })));
+      expect(state.fake!.db.messages[0].attachment_ids).toEqual([]);
+      expect(used.conversation_id).toBe("other-chat");
+    });
+
+    it("course-only with no matching passages tells the model to say so", async () => {
+      state.live = true;
+      const p = { id: crypto.randomUUID(), user_id: "user-1", name: "STATS 2244", instructions: "" };
+      state.fake!.db.projects.push(p);
+      const f = seedFile({ project_id: p.id, char_count: 99_999 });
+      state.fake!.db.file_chunks.push({ id: "c", file_id: f.id, page: 1, chunk_index: 0, content: "Cluster sampling" });
+      await readEvents(await POST(req({ provider: "anthropic", modelId: "anthropic-default", content: "photosynthesis?", projectId: p.id, courseOnly: true })));
+      expect(state.lastArgs!.system).toContain("I couldn't find this in your course files");
+      expect(state.fake!.db.conversations[0].course_only).toBe(true);
+    });
+
+    it("scanned PDFs are named to the model as unreadable", async () => {
+      state.live = true;
+      const f = seedFile({ status: "needs_ocr", name: "scan.pdf" });
+      await readEvents(await POST(req({ provider: "anthropic", modelId: "anthropic-default", content: "read it", attachmentIds: [f.id] })));
+      expect(state.lastArgs!.system).toContain("couldn't be read");
+      expect(state.lastArgs!.system).toContain("scan.pdf");
+    });
+
+    it("images attached to the message go to the vision model", async () => {
+      state.live = true;
+      const img = seedFile({ kind: "image", name: "diagram.png", mime: "image/png", storage_path: "u/img.png" });
+      state.fake!.storage["u/img.png"] = { bytes: new Uint8Array([1, 2, 3]), type: "image/png" };
+      await readEvents(await POST(req({ provider: "anthropic", modelId: "anthropic-default", content: "what is this?", attachmentIds: [img.id] })));
+      const last = state.lastArgs!.history.at(-1)!;
+      expect(last.images).toEqual([{ mime: "image/png", data: Buffer.from([1, 2, 3]).toString("base64") }]);
+    });
+
+    it("study mode sticks to the chat and reaches the prompt", async () => {
+      state.live = true;
+      await readEvents(await POST(req({ provider: "anthropic", modelId: "anthropic-default", content: "derivatives", mode: "quiz" })));
+      expect(state.lastArgs!.system).toContain("QUIZ ME");
+      expect(state.fake!.db.conversations[0].mode).toBe("quiz");
+    });
   });
 });

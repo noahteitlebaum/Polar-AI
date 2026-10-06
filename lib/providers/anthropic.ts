@@ -17,7 +17,17 @@ export const anthropic: ProviderAdapter = {
         model: model.apiModel,
         max_tokens: maxOutput,
         system,
-        messages: normalizeTurns(history),
+        messages: normalizeTurns(history).map((t) =>
+          t.images?.length && t.role === "user"
+            ? {
+                role: "user",
+                content: [
+                  ...t.images.map((i) => ({ type: "image", source: { type: "base64", media_type: i.mime, data: i.data } })),
+                  { type: "text", text: t.content || " " },
+                ],
+              }
+            : { role: t.role, content: t.content },
+        ),
         stream: true,
       }),
       signal,

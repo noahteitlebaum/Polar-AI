@@ -1,7 +1,8 @@
 import type { ImageModel, ModelOption, ProviderId } from "@/config/models";
 
 // Provider-neutral shapes (see docs/ARCHITECTURE.md). Server-only.
-export type ChatTurn = { role: "user" | "assistant"; content: string };
+export type TurnImage = { mime: string; data: string }; // base64
+export type ChatTurn = { role: "user" | "assistant"; content: string; images?: TurnImage[] };
 
 export interface Usage {
   input: number;     // prompt tokens
@@ -60,11 +61,13 @@ export function errorForStatus(status: number): ProviderError {
 export function normalizeTurns(history: ChatTurn[]): ChatTurn[] {
   const out: ChatTurn[] = [];
   for (const t of history) {
-    if (!t.content.trim()) continue;
+    if (!t.content.trim() && !t.images?.length) continue;
     if (out.length === 0 && t.role === "assistant") continue;
     const last = out[out.length - 1];
-    if (last && last.role === t.role) last.content += `\n\n${t.content}`;
-    else out.push({ ...t });
+    if (last && last.role === t.role) {
+      last.content = [last.content, t.content].filter(Boolean).join("\n\n");
+      if (t.images?.length) last.images = [...(last.images ?? []), ...t.images];
+    } else out.push({ ...t, images: t.images ? [...t.images] : undefined });
   }
   return out;
 }

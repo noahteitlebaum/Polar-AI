@@ -10,11 +10,11 @@ export async function GET(_: Request, ctx: RouteContext<"/api/conversations/[id]
   const { id } = await ctx.params;
   if (!isUuid(id)) return json({ error: "not_found" }, 404);
 
-  const { data: conv } = await auth.supabase.from("conversations").select("id").eq("id", id).maybeSingle();
+  const { data: conv } = await auth.supabase.from("conversations").select("id, mode, course_only, summary").eq("id", id).maybeSingle();
   if (!conv) return json({ error: "not_found" }, 404);
   const { data: rows, error } = await auth.supabase
     .from("messages")
-    .select("id, role, kind, content, image_path, model_id, status")
+    .select("id, role, kind, content, image_path, model_id, status, attachment_ids, sources")
     .eq("conversation_id", id)
     .order("seq");
   if (error) return json({ error: "load_failed" }, 500);
@@ -26,7 +26,18 @@ export async function GET(_: Request, ctx: RouteContext<"/api/conversations/[id]
     for (const s of signed ?? []) if (s.path && s.signedUrl) urls.set(s.path, s.signedUrl);
   }
 
+  // Attachment chips (name, type, status) for each student message.
+  const fileIds = [...new Set((rows ?? []).flatMap((m) => (m.attachment_ids as string[] | null) ?? []))];
+  const files = new Map<string, { id: string; name: string; kind: string; status: string; error: string | null }>();
+  if (fileIds.length) {
+    const { data: f } = await auth.supabase.from("files").select("id, name, kind, status, error").in("id", fileIds);
+    for (const x of f ?? []) files.set(x.id, x);
+  }
+
   return json({
+    mode: conv.mode,
+    courseOnly: conv.course_only,
+    summarized: Boolean(conv.summary),
     messages: (rows ?? []).map((m) => ({
       id: m.id,
       role: m.role,
@@ -35,6 +46,8 @@ export async function GET(_: Request, ctx: RouteContext<"/api/conversations/[id]
       imageUrl: m.image_path ? urls.get(m.image_path) ?? null : undefined,
       modelId: m.model_id ?? undefined,
       status: m.status,
+      attachments: ((m.attachment_ids as string[] | null) ?? []).map((fid) => files.get(fid)).filter(Boolean),
+      sources: m.sources ?? undefined,
     })),
   });
 }
@@ -68,6 +81,9 @@ export async function DELETE(_: Request, ctx: RouteContext<"/api/conversations/[
   if ("error" in auth) return auth.error;
   const { id } = await ctx.params;
   if (!isUuid(id)) return json({ error: "not_found" }, 404);
+  // Remove this chat's uploaded files from storage too (rows go with the chat).
+  const { data: files } = await auth.supabase.from("files").select("storage_path").eq("conversation_id", id);
+  if (files?.length) await auth.supabase.storage.from("uploads").remove(files.map((f) => f.storage_path as string));
   const { error } = await auth.supabase.from("conversations").delete().eq("id", id);
   if (error) return json({ error: "delete_failed" }, 500);
   return json({ ok: true });

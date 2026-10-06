@@ -4,6 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { getModel, modelsFor, type ProviderId } from "@/config/models";
 import { ProviderLogo } from "./provider-logo";
 
+// Typical message ≈ 3,000 tokens in (history + question) and 800 out. Prices are $ per 1M tokens.
+function perMessage(inPrice: number, outPrice: number) {
+  const usd = (3000 * inPrice + 800 * outPrice) / 1_000_000;
+  return usd < 0.001 ? "<$0.001" : `$${usd < 0.01 ? usd.toFixed(3) : usd.toFixed(2)}`;
+}
+
 // Model picker that lives in the message box (like Gemini's "Flash ▾"). Opens upward as a card.
 export function ModelMenu({ provider, value, onChange, disabled }: {
   provider: ProviderId;
@@ -69,6 +75,7 @@ export function ModelMenu({ provider, value, onChange, disabled }: {
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium text-ink">{m.short}</span>
                   <span className="block truncate text-xs text-ink-subtle">{m.description}</span>
+                  <span className="block text-[11px] tabular-nums text-ink-subtle">≈ {perMessage(m.inputPrice, m.outputPrice)} per typical message</span>
                 </span>
                 <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full ${on ? "bg-brand text-on-brand" : "border border-line-strong"}`}>
                   {on && (

@@ -3,13 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { IMAGE_MODELS, PROVIDERS, defaultModelFor, getModel, type ProviderId } from "@/config/models";
+import { IMAGE_MODELS, PROVIDERS, defaultModelFor, getModel, modelsFor, type ProviderId } from "@/config/models";
 import { THEMES } from "@/config/themes";
 import { signOut } from "../login/actions";
 import { ProviderLogo } from "@/components/provider-logo";
 import { ModelMenu } from "@/components/model-menu";
-import { ToolsMenu } from "@/components/tools-menu";
+import { ToolsMenu, type StudyMode } from "@/components/tools-menu";
 import { ProjectDialog } from "@/components/project-dialog";
+import { FileChip } from "@/components/file-chip";
+import { AnswerText, SourceList, type Source } from "@/components/answer-text";
+import { ACCEPT_ATTR, uploadFile, type UploadedFile } from "@/lib/files/upload-client";
 
 // Chats, projects and usage live in Supabase (see app/api/*). Each AI app has its own chats and projects.
 type Message = {
@@ -21,7 +24,11 @@ type Message = {
   modelId?: string;
   status: "complete" | "partial" | "streaming" | "error";
   error?: string; // friendly error text for a failed reply
+  attachments?: { id: string; name: string; kind: string; status: string; error?: string | null }[];
+  sources?: Source[];
 };
+type Pending = { key: string; file?: UploadedFile; name: string; uploading: boolean; error?: string };
+type ChatSettings = { mode: StudyMode; courseOnly: boolean; summarized?: boolean };
 type ConvSummary = { id: string; title: string; modelId: string; projectId: string | null; updatedAt: string };
 type Project = { id: string; name: string; instructions: string };
 type Usage = { live: boolean; allowance: number; spent: number; reserved: number };
@@ -46,7 +53,7 @@ function errorText(code: string, label: string, appName: string): string {
   }
 }
 
-export function ChatApp({ email }: { email: string }) {
+export function ChatApp({ email, userId }: { email: string; userId: string }) {
   const router = useRouter();
   const [provider, setProvider] = useState<ProviderId>("openai");
   const [convs, setConvs] = useState<Record<ProviderId, ConvSummary[] | null>>(() => perProvider<ConvSummary[] | null>(() => null));
@@ -66,6 +73,11 @@ export function ChatApp({ email }: { email: string }) {
   const [ready, setReady] = useState(false); // saved app choice restored
   const [projectDialog, setProjectDialog] = useState<null | { editing?: Project }>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [pending, setPending] = useState<Pending[]>([]); // files attached to the next message
+  const [settings, setSettings] = useState<Record<string, ChatSettings>>({});
+  const [courseFiles, setCourseFiles] = useState<Record<string, UploadedFile[]>>({});
+  const [courseUploading, setCourseUploading] = useState<string[]>([]);
+  const fileInput = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -80,6 +92,8 @@ export function ChatApp({ email }: { email: string }) {
   const modelId = getModel(active?.modelId)?.provider === provider ? active!.modelId : draftModels[provider];
   const currentModel = getModel(modelId);
   const empty = thread.length === 0;
+  const chatSettings: ChatSettings = settings[msgKey] ?? { mode: "chat", courseOnly: false };
+  const setChatSettings = (patch: Partial<ChatSettings>) => setSettings((prev) => ({ ...prev, [msgKey]: { ...chatSettings, ...patch } }));
   const activeProject = projects[provider].find((p) => p.id === (active?.projectId ?? filter)) ?? null;
   const imageModel = IMAGE_MODELS[provider];
 
@@ -138,8 +152,9 @@ export function ChatApp({ email }: { email: string }) {
     (async () => {
       const res = await fetch(`/api/conversations/${id}`).catch(() => null);
       if (!res || handleAuth(res) || !res.ok) return;
-      const { messages: rows } = (await res.json()) as { messages: Message[] };
-      setMessages((prev) => (prev[id] ? prev : { ...prev, [id]: rows }));
+      const out = (await res.json()) as { messages: Message[]; mode?: StudyMode; courseOnly?: boolean; summarized?: boolean };
+      setMessages((prev) => (prev[id] ? prev : { ...prev, [id]: out.messages }));
+      setSettings((prev) => (prev[id] ? prev : { ...prev, [id]: { mode: out.mode ?? "chat", courseOnly: Boolean(out.courseOnly), summarized: out.summarized } }));
     })();
   }, [active, messages, handleAuth]);
 
@@ -159,6 +174,7 @@ export function ChatApp({ email }: { email: string }) {
       if (fromKey !== newId) delete next[fromKey];
       return next;
     });
+    setSettings((prev) => ({ ...prev, [newId]: prev[fromKey] ?? prev[newId] ?? { mode: "chat", courseOnly: false } }));
     setConvs((prev) => {
       const list = prev[provider] ?? [];
       const existing = list.find((c) => c.id === newId);
@@ -183,12 +199,15 @@ export function ChatApp({ email }: { email: string }) {
     setProvider(p);
     setInput("");
     setImageMode(false);
+    setPending([]);
     setSidebarOpen(false);
   }
 
   function newChat() {
     setActive(null);
     setMessages((prev) => ({ ...prev, [`${DRAFT}:${provider}`]: [] }));
+    setSettings((prev) => ({ ...prev, [`${DRAFT}:${provider}`]: { mode: "chat", courseOnly: false } }));
+    setPending([]);
     setSidebarOpen(false);
   }
 
@@ -212,22 +231,30 @@ export function ChatApp({ email }: { email: string }) {
     if (res.ok) setConvs((prev) => ({ ...prev, [provider]: (prev[provider] ?? []).map((c) => (c.id === id ? { ...c, projectId } : c)) }));
   }
 
+  function openCourse(p: Project) {
+    setProjectDialog({ editing: p });
+    loadCourseFiles(p.id);
+  }
+
   async function saveProject(v: { name: string; instructions: string }) {
     const editing = projectDialog?.editing;
     const res = await fetch(editing ? `/api/projects/${editing.id}` : "/api/projects", {
       method: editing ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(editing ? v : { ...v, provider }),
+      body: JSON.stringify(v),
     });
     if (!res.ok) return;
     const { project } = (await res.json()) as { project: Project };
-    setProjects((prev) => ({
-      ...prev,
-      [provider]: editing ? prev[provider].map((p) => (p.id === project.id ? project : p)) : [project, ...prev[provider]],
-    }));
+    // Courses are shared by all four apps.
+    setProjects((prev) =>
+      Object.fromEntries(PROVIDERS.map((pv) => [pv, editing ? prev[pv].map((p) => (p.id === project.id ? project : p)) : [project, ...prev[pv]]])) as Record<ProviderId, Project[]>,
+    );
     if (!editing) {
       setProjectFilter((prev) => ({ ...prev, [provider]: project.id }));
       newChat();
+      // Keep the dialog open on the new course so files can be added right away.
+      openCourse(project);
+      return;
     }
     setProjectDialog(null);
   }
@@ -235,22 +262,65 @@ export function ChatApp({ email }: { email: string }) {
   async function deleteProject(id: string) {
     const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
     if (!res.ok) return;
-    setProjects((prev) => ({ ...prev, [provider]: prev[provider].filter((p) => p.id !== id) }));
+    setProjects((prev) => Object.fromEntries(PROVIDERS.map((pv) => [pv, prev[pv].filter((p) => p.id !== id)])) as Record<ProviderId, Project[]>);
     setConvs((prev) => ({ ...prev, [provider]: (prev[provider] ?? []).map((c) => (c.projectId === id ? { ...c, projectId: null } : c)) }));
     setProjectFilter((prev) => ({ ...prev, [provider]: null }));
     setProjectDialog(null);
   }
 
+  // ---------------------------------------------------------------- files
+  async function attachFiles(list: File[]) {
+    for (const f of list.slice(0, 10)) {
+      const key = tmpId();
+      setPending((prev) => [...prev, { key, name: f.name, uploading: true }]);
+      const out = await uploadFile(f, userId);
+      setPending((prev) => prev.map((x) => (x.key !== key ? x : !("id" in out) ? { ...x, uploading: false, error: out.error } : { ...x, uploading: false, file: out })));
+    }
+  }
+
+  const loadCourseFiles = useCallback(async (projectId: string) => {
+    const res = await fetch(`/api/files?projectId=${projectId}`).catch(() => null);
+    if (res?.ok) {
+      const { files } = (await res.json()) as { files: UploadedFile[] };
+      setCourseFiles((prev) => ({ ...prev, [projectId]: files }));
+    }
+  }, []);
+
+  async function uploadCourseFiles(projectId: string, list: File[]) {
+    for (const f of list.slice(0, 20)) {
+      setCourseUploading((prev) => [...prev, f.name]);
+      const out = await uploadFile(f, userId, projectId);
+      setCourseUploading((prev) => prev.filter((n) => n !== f.name));
+      if (!("id" in out)) alertLine(`${f.name}: ${out.error}`);
+      else setCourseFiles((prev) => ({ ...prev, [projectId]: [out, ...(prev[projectId] ?? [])] }));
+    }
+  }
+
+  async function deleteCourseFile(projectId: string, fileId: string) {
+    const res = await fetch(`/api/files/${fileId}`, { method: "DELETE" }).catch(() => null);
+    if (res?.ok) setCourseFiles((prev) => ({ ...prev, [projectId]: (prev[projectId] ?? []).filter((f) => f.id !== fileId) }));
+  }
+
+  const [notice, setNotice] = useState<string | null>(null);
+  function alertLine(text: string) {
+    setNotice(text);
+    setTimeout(() => setNotice((n) => (n === text ? null : n)), 6000);
+  }
+
   // ---------------------------------------------------------------- sending
   async function send(text: string, retry = false) {
     const content = text.trim();
-    if ((!content && !retry) || busy) return;
+    const ready = pending.filter((p) => p.file);
+    if ((!content && !retry && !ready.length) || busy || pending.some((p) => p.uploading)) return;
     const key = msgKey;
     const label = currentModel?.label ?? theme.appName;
 
+    const attachmentIds = retry || imageMode ? [] : ready.map((p) => p.file!.id);
     if (!retry) {
-      patchMessages(key, (m) => [...m, { id: tmpId(), role: "user", kind: "text", content, status: "complete" }]);
+      const attachments = imageMode ? [] : ready.map((p) => ({ id: p.file!.id, name: p.file!.name, kind: p.file!.kind, status: p.file!.status, error: p.file!.error }));
+      patchMessages(key, (m) => [...m, { id: tmpId(), role: "user", kind: "text", content, status: "complete", attachments }]);
       setInput("");
+      if (!imageMode) setPending([]);
     } else {
       // Drop the failed reply; the server does the same.
       patchMessages(key, (m) => {
@@ -273,7 +343,10 @@ export function ChatApp({ email }: { email: string }) {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, modelId, content, retry, conversationId: active?.id, projectId: active ? undefined : filter }),
+        body: JSON.stringify({
+          provider, modelId, content, retry, attachmentIds, conversationId: active?.id, projectId: active ? undefined : filter,
+          mode: chatSettings.mode, courseOnly: chatSettings.courseOnly,
+        }),
         signal: controller.signal,
       });
       if (handleAuth(res)) return;
@@ -305,8 +378,9 @@ export function ChatApp({ email }: { email: string }) {
               currentKey = ev.conversationId;
             }
             setDropped((prev) => ({ ...prev, [ev.conversationId]: ev.dropped }));
+            if (ev.summarized) setSettings((prev) => ({ ...prev, [ev.conversationId]: { ...(prev[ev.conversationId] ?? chatSettings), summarized: true } }));
           } else if (ev.t === "delta") patchReply((m) => ({ ...m, content: m.content + ev.v }));
-          else if (ev.t === "done") patchReply((m) => ({ ...m, status: ev.status === "partial" ? "partial" : "complete" }));
+          else if (ev.t === "done") patchReply((m) => ({ ...m, status: ev.status === "partial" ? "partial" : "complete", sources: ev.sources }));
           else if (ev.t === "error") patchReply((m) => ({ ...m, status: "error", error: errorText(ev.code, label, theme.appName) }));
         }
       }
@@ -357,7 +431,7 @@ export function ChatApp({ email }: { email: string }) {
       <span className="h-3 w-3 rounded-[2px] bg-current" />
     </button>
   ) : (
-    <button type="submit" disabled={!input.trim() || busy} aria-label={imageMode ? "Create image" : "Send"}
+    <button type="submit" disabled={(!input.trim() && !pending.some((p) => p.file)) || busy || pending.some((p) => p.uploading)} aria-label={imageMode ? "Create image" : "Send"}
       className={`grid shrink-0 place-items-center bg-brand text-on-brand transition hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-30 ${theme.sendClass}`}>
       <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
         <path d="M8 13V3M3.5 7.5L8 3l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -365,11 +439,29 @@ export function ChatApp({ email }: { email: string }) {
     </button>
   );
 
+  // Warn before the budget runs out and offer the app's cheapest model.
+  const remainingNow = usage?.live ? usage.allowance - usage.spent - usage.reserved : Infinity;
+  const cheapest = [...modelsFor(provider)].sort((a, b) => a.outputPrice - b.outputPrice)[0];
+  const lowBalance = usage?.live && remainingNow < Math.max(500_000, usage.allowance * 0.1) && (
+    <div className="mx-auto mb-2 flex max-w-3xl flex-wrap items-center gap-2 rounded-2xl border border-line bg-surface-200 px-4 py-2.5 text-sm">
+      <span className="flex-1">
+        {remainingNow <= 0 ? "You've used your budget." : `Only ${dollars(Math.max(0, remainingNow))} left.`}{" "}
+        <span className="text-ink-muted">Each message is charged by length; longer chats and files cost more.</span>
+      </span>
+      {cheapest && cheapest.id !== modelId && remainingNow > 0 && (
+        <button type="button" onClick={() => setModel(cheapest.id)} className="rounded-full bg-brand px-3 py-1 text-xs font-medium text-on-brand">
+          Switch to {cheapest.label} (cheaper)
+        </button>
+      )}
+    </div>
+  );
+
   const placeholder = imageMode ? "Describe an image" : empty ? `Ask ${theme.appName}` : `Reply to ${theme.appName}…`;
   const textarea = (
     <textarea
       value={input}
       onChange={(e) => setInput(e.target.value)}
+      onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = `${Math.min(t.scrollHeight, 160)}px`; }}
       onKeyDown={(e) => {
         if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
@@ -379,23 +471,49 @@ export function ChatApp({ email }: { email: string }) {
       rows={theme.inlineComposer ? 1 : empty ? 2 : 1}
       aria-label="Message"
       placeholder={placeholder}
-      className="max-h-40 min-w-0 flex-1 resize-none bg-transparent py-1.5 text-base text-ink outline-none placeholder:text-ink-subtle"
+      className="max-h-40 w-full min-w-0 flex-1 resize-none bg-transparent py-1.5 text-base text-ink outline-none placeholder:text-ink-subtle"
     />
   );
-  const tools = <ToolsMenu imageLabel={imageModel?.label ?? null} imageMode={imageMode} onImageMode={setImageMode} disabled={busy} />;
+  const tools = (
+    <ToolsMenu
+      onUpload={() => fileInput.current?.click()}
+      imageLabel={imageModel?.label ?? null} imageMode={imageMode} onImageMode={setImageMode}
+      mode={chatSettings.mode} onMode={(m) => setChatSettings({ mode: m })}
+      courseOnly={chatSettings.courseOnly} onCourseOnly={(v) => setChatSettings({ courseOnly: v })}
+      disabled={busy}
+    />
+  );
+  const pendingChips = pending.length > 0 && (
+    <div className="mb-2 flex flex-wrap gap-2">
+      {pending.map((p) => (
+        <FileChip key={p.key} name={p.name} kind={p.file?.kind} state={p.uploading ? "uploading" : p.error ? "failed" : p.file!.status}
+          detail={p.error ?? p.file?.error ?? (p.file?.pageCount ? `${p.file.pageCount} pages` : undefined)}
+          onRemove={() => setPending((prev) => prev.filter((x) => x.key !== p.key))} />
+      ))}
+    </div>
+  );
   const modelMenu = imageMode ? null : <ModelMenu provider={provider} value={modelId} onChange={setModel} disabled={busy} />;
 
   const composer = (
-    <form onSubmit={(e) => { e.preventDefault(); send(input); }} className="w-full">
+    <form onSubmit={(e) => { e.preventDefault(); send(input); }} className="w-full"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files.length) attachFiles(Array.from(e.dataTransfer.files)); }}
+      onPaste={(e) => { const imgs = Array.from(e.clipboardData.files); if (imgs.length) { e.preventDefault(); attachFiles(imgs); } }}>
+      <input ref={fileInput} type="file" multiple accept={ACCEPT_ATTR} hidden onChange={(e) => { attachFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} />
+      {lowBalance}
       {theme.inlineComposer ? (
-        <div className={`mx-auto flex max-w-3xl items-center gap-1.5 py-2.5 pl-3 pr-3 transition ${theme.composerClass}`}>
-          {tools}
-          {textarea}
-          {modelMenu}
-          {sendButton}
+        <div className={`mx-auto max-w-3xl py-2.5 pl-3 pr-3 transition ${theme.composerClass}`}>
+          {pendingChips && <div className="px-2 pt-1">{pendingChips}</div>}
+          <div className="flex items-center gap-1.5">
+            {tools}
+            {textarea}
+            {modelMenu}
+            {sendButton}
+          </div>
         </div>
       ) : (
         <div className={`mx-auto max-w-3xl p-2.5 pl-4 transition ${theme.composerClass}`}>
+          {pendingChips}
           {textarea}
           <div className="mt-1 flex items-center gap-1.5">
             {tools}
@@ -451,15 +569,15 @@ export function ChatApp({ email }: { email: string }) {
         <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-2">
           {/* Projects */}
           <div className="mt-5 flex items-center justify-between px-3">
-            <p className="text-sm text-ink-subtle">Projects</p>
-            <button onClick={() => setProjectDialog({})} aria-label="New project" className="grid h-6 w-6 place-items-center rounded-full text-ink-subtle hover:bg-surface-200 hover:text-ink">
+            <p className="text-sm text-ink-subtle">Courses</p>
+            <button onClick={() => setProjectDialog({})} aria-label="New course" className="grid h-6 w-6 place-items-center rounded-full text-ink-subtle hover:bg-surface-200 hover:text-ink">
               <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden><path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
             </button>
           </div>
           <div className="mt-1 space-y-0.5">
             {projects[provider].length === 0 && (
               <button onClick={() => setProjectDialog({})} className={`w-full px-3 py-2 text-left text-sm text-ink-subtle hover:bg-surface-200 ${theme.itemClass}`}>
-                + Create a project
+                + Add a course
               </button>
             )}
             {projects[provider].map((p) => {
@@ -479,7 +597,7 @@ export function ChatApp({ email }: { email: string }) {
           </div>
 
           {/* Chats */}
-          <p className="mt-5 px-3 text-sm text-ink-subtle">{filter ? "Chats in this project" : "Recents"}</p>
+          <p className="mt-5 px-3 text-sm text-ink-subtle">{filter ? "Chats in this course" : "Recents"}</p>
           <nav className="mt-1 space-y-0.5" aria-label={`${theme.appName} chats`}>
             {appConvs === null && <p className="px-3 py-2 text-sm text-ink-subtle">Loading…</p>}
             {appConvs !== null && visibleConvs.length === 0 && <p className="px-3 py-2 text-sm text-ink-subtle">No chats yet.</p>}
@@ -536,7 +654,7 @@ export function ChatApp({ email }: { email: string }) {
             <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden><path d="M2.5 4h11M2.5 8h11M2.5 12h11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
           </button>
           {activeProject && (
-            <button onClick={() => setProjectDialog({ editing: activeProject })} title="Edit project"
+            <button onClick={() => openCourse(activeProject)} title="Course settings and files"
               className="flex min-w-0 items-center gap-2 rounded-full px-3 py-1.5 text-sm text-ink-muted hover:bg-surface-200 hover:text-ink">
               <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden className="shrink-0"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5z" fill="none" stroke="currentColor" strokeWidth="1.3" /></svg>
               <span className="truncate">{activeProject.name}</span>
@@ -544,7 +662,7 @@ export function ChatApp({ email }: { email: string }) {
           )}
           {active && projects[provider].length > 0 && (
             <label className="ml-auto hidden items-center gap-1.5 text-xs text-ink-subtle sm:flex">
-              Project
+              Course
               <select value={active.projectId ?? ""} onChange={(e) => moveToProject(active.id, e.target.value || null)}
                 className="rounded-full border border-line bg-surface-100 px-2.5 py-1 text-xs text-ink outline-none">
                 <option value="">None</option>
@@ -565,16 +683,18 @@ export function ChatApp({ email }: { email: string }) {
         {empty ? (
           <div className="flex flex-1 flex-col items-center justify-center px-4 pb-[12vh]">
             {activeProject && <p className="mb-2 text-sm text-ink-subtle">New chat in {activeProject.name}</p>}
-            <h1 className={`mb-8 text-center ${theme.greetingClass}`}>{imageMode ? "What should I create?" : theme.greeting}</h1>
+            <h1 className={`mb-8 text-center ${theme.greetingClass}`}>{imageMode ? "What should I create?" : chatSettings.mode === "quiz" ? "What should I quiz you on?" : chatSettings.mode === "hints" ? "What are you working on?" : chatSettings.mode === "explain" ? "What should I explain?" : theme.greeting}</h1>
             {composer}
           </div>
         ) : (
           <>
             <div className="flex-1 overflow-y-auto">
               <div className="mx-auto max-w-3xl px-4 py-6">
-                {active && dropped[active.id] && (
+                {active && (dropped[active.id] || chatSettings.summarized) && (
                   <p className="mb-6 rounded-xl bg-surface-200 px-4 py-2.5 text-center text-xs text-ink-muted">
-                    Older messages not included — this chat is longer than {currentModel?.label ?? "the model"} is sent at once.
+                    {chatSettings.summarized
+                      ? `This chat is long: ${currentModel?.label ?? "the model"} gets a summary of older messages plus the recent ones.`
+                      : `Older messages not included — this chat is longer than ${currentModel?.label ?? "the model"} is sent at once.`}
                   </p>
                 )}
                 <ul className="space-y-8">
@@ -582,8 +702,13 @@ export function ChatApp({ email }: { email: string }) {
                     const model = getModel(m.modelId);
                     if (m.role === "user") {
                       return (
-                        <li key={m.id} className="flex justify-end">
-                          <div className={`max-w-[80%] whitespace-pre-wrap leading-relaxed ${theme.userBubbleClass}`}>{m.content}</div>
+                        <li key={m.id} className="flex flex-col items-end gap-2">
+                          {m.attachments && m.attachments.length > 0 && (
+                            <div className="flex max-w-[80%] flex-wrap justify-end gap-2">
+                              {m.attachments.map((a) => <FileChip key={a.id} name={a.name} kind={a.kind} state={a.status} detail={a.error ?? undefined} />)}
+                            </div>
+                          )}
+                          {m.content && <div className={`max-w-[80%] whitespace-pre-wrap leading-relaxed ${theme.userBubbleClass}`}>{m.content}</div>}
                         </li>
                       );
                     }
@@ -605,10 +730,13 @@ export function ChatApp({ email }: { email: string }) {
                           )
                         ) : (
                           <div className={`whitespace-pre-wrap ${theme.replyClass}`}>
-                            {m.content}
+                            <AnswerText text={m.content} sources={m.sources} />
                             {m.status === "streaming" && <span aria-label="Writing" className="polar-caret ml-0.5 inline-block h-4 w-1.5 rounded-sm bg-ice align-middle" />}
                             {m.status === "partial" && <span className="ml-1 text-xs text-ink-subtle">[stopped]</span>}
                           </div>
+                        )}
+                        {m.kind === "text" && m.sources && m.sources.length > 0 && (
+                          <SourceList sources={m.sources} />
                         )}
                         {m.status === "error" && (
                           <div className="mt-2 rounded-xl border border-danger/30 bg-danger-surface p-3 text-sm text-danger">
@@ -634,12 +762,18 @@ export function ChatApp({ email }: { email: string }) {
 
       <ProjectDialog
         open={projectDialog !== null}
-        appName={theme.appName}
         initial={projectDialog?.editing}
+        files={projectDialog?.editing ? courseFiles[projectDialog.editing.id] : undefined}
+        uploading={courseUploading}
         onClose={() => setProjectDialog(null)}
         onSave={saveProject}
         onDelete={projectDialog?.editing ? () => deleteProject(projectDialog.editing!.id) : undefined}
+        onUpload={projectDialog?.editing ? (list) => uploadCourseFiles(projectDialog.editing!.id, list) : undefined}
+        onDeleteFile={projectDialog?.editing ? (fid) => deleteCourseFile(projectDialog.editing!.id, fid) : undefined}
       />
+      {notice && (
+        <div role="status" className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-ink px-4 py-2 text-sm text-surface-000 shadow-menu">{notice}</div>
+      )}
     </div>
   );
 }

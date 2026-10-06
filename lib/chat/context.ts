@@ -42,11 +42,60 @@ export function maxOutputFor(model: Pick<ModelOption, "inputPrice" | "outputPric
 
 export const BASE_SYSTEM_PROMPT =
   "You are a helpful assistant for university students, used through Polar AI. " +
-  "Earlier assistant turns in this chat may come from a different model of the same family; treat them as the conversation so far.";
+  "Earlier assistant turns in this chat may come from a different model of the same family; treat them as the conversation so far. " +
+  "Use Markdown and LaTeX ($...$) for maths when helpful.";
 
-export function systemPrompt(modelLabel: string, projectName?: string, projectInstructions?: string): string {
-  let s = `${BASE_SYSTEM_PROMPT}\nYou are ${modelLabel}.`;
-  if (projectName) s += `\n\nThis chat is part of the student's project "${projectName}".`;
-  if (projectInstructions?.trim()) s += `\nProject instructions from the student:\n${projectInstructions.trim()}`;
-  return s;
+export type StudyMode = "chat" | "explain" | "quiz" | "hints";
+export const STUDY_MODES: StudyMode[] = ["chat", "explain", "quiz", "hints"];
+
+// Shared across all providers so every model studies the same way.
+export const MODE_PROMPTS: Record<StudyMode, string> = {
+  chat: "",
+  explain:
+    "Study mode: EXPLAIN. Teach step by step at an undergraduate level. Start from what the student likely knows, " +
+    "build up one idea at a time, use a small worked example, and end with one short question that checks understanding.",
+  quiz:
+    "Study mode: QUIZ ME. Quiz the student on the topic (and on their course material if provided). Ask ONE question at a time " +
+    "(mix multiple choice and short answer), then wait. After each answer: say if it's right, explain why briefly, and keep a " +
+    "running score like \"Score: 3/4\". Never reveal an answer before the student tries. Revisit concepts they missed. " +
+    "When they say stop, list the concepts to review.",
+  hints:
+    "Study mode: HINTS ONLY. Do not give full solutions or final answers. Give the smallest useful hint, then ask the student " +
+    "to try the next step. Give a bigger hint only if they're still stuck after trying. Confirm when their own answer is correct.",
+};
+
+export function systemPrompt(o: {
+  modelLabel: string;
+  projectName?: string;
+  projectInstructions?: string;
+  mode?: StudyMode;
+  material?: string;        // numbered passages from course files
+  courseOnly?: boolean;
+  hasFiles?: boolean;
+  unreadable?: string[];
+  summary?: string | null;  // summary of earlier messages that no longer fit
+}): string {
+  const parts = [`${BASE_SYSTEM_PROMPT}\nYou are ${o.modelLabel}.`];
+  if (o.projectName) parts.push(`This chat is part of the student's course "${o.projectName}".`);
+  if (o.projectInstructions?.trim()) parts.push(`Course instructions from the student:\n${o.projectInstructions.trim()}`);
+  if (o.mode && MODE_PROMPTS[o.mode]) parts.push(MODE_PROMPTS[o.mode]);
+  if (o.summary) parts.push(`Summary of earlier parts of this chat (older messages aren't shown to you):\n${o.summary}`);
+  if (o.unreadable?.length) {
+    parts.push(`These uploaded files couldn't be read (scanned or unsupported), so you can't see their contents: ${o.unreadable.join(", ")}. Tell the student if they ask about them.`);
+  }
+  if (o.material) {
+    parts.push(
+      "Course material: numbered passages from the student's files are below. When you use one, cite it right after the claim as [S1], [S2]… " +
+        "Only cite passages you actually used; never invent citations or page numbers.",
+    );
+    parts.push(
+      o.courseOnly
+        ? "The student turned on \"Only use my course material\": answer ONLY from these passages. If they don't contain the answer, say \"I couldn't find this in your course files\" and say what's missing; don't fill gaps from general knowledge."
+        : "If the passages don't cover the question, say so in one sentence, then answer from general knowledge (clearly marked as not from their files).",
+    );
+    parts.push(`<course_material>\n${o.material}\n</course_material>`);
+  } else if (o.courseOnly && o.hasFiles) {
+    parts.push("The student turned on \"Only use my course material\", but nothing in their files matched this question. Say \"I couldn't find this in your course files\" and suggest what to upload or how to rephrase. Don't answer from general knowledge.");
+  }
+  return parts.join("\n\n");
 }

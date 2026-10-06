@@ -11,7 +11,20 @@ export const xai: ProviderAdapter = {
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: model.apiModel,
-        messages: [{ role: "system", content: system }, ...normalizeTurns(history)],
+        messages: [
+          { role: "system", content: system },
+          ...normalizeTurns(history).map((t) =>
+            t.images?.length && t.role === "user"
+              ? {
+                  role: "user",
+                  content: [
+                    ...t.images.map((i) => ({ type: "image_url", image_url: { url: `data:${i.mime};base64,${i.data}` } })),
+                    { type: "text", text: t.content || " " },
+                  ],
+                }
+              : { role: t.role, content: t.content },
+          ),
+        ],
         max_tokens: maxOutput,
         stream: true,
         stream_options: { include_usage: true },

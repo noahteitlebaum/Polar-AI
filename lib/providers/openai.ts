@@ -12,7 +12,17 @@ export const openai: ProviderAdapter = {
       body: JSON.stringify({
         model: model.apiModel,
         instructions: system,
-        input: normalizeTurns(history).map((t) => ({ role: t.role, content: t.content })),
+        input: normalizeTurns(history).map((t) =>
+          t.images?.length && t.role === "user"
+            ? {
+                role: "user",
+                content: [
+                  ...t.images.map((i) => ({ type: "input_image", image_url: `data:${i.mime};base64,${i.data}` })),
+                  { type: "input_text", text: t.content || " " },
+                ],
+              }
+            : { role: t.role, content: t.content },
+        ),
         max_output_tokens: maxOutput,
         stream: true,
         store: false,
