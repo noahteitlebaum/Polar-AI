@@ -1,11 +1,28 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { OrbitBackdrop, Wordmark } from "./brand";
 
 export const inputClass =
-  "w-full rounded-lg border border-zinc-300 bg-white px-4 py-3 text-base text-zinc-900 outline-none placeholder:text-zinc-400 focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-100 dark:focus:ring-zinc-100";
+  "w-full rounded-lg border border-line-strong bg-surface-200 px-4 py-3 text-base text-ink outline-none transition placeholder:text-ink-subtle focus:border-brand focus:shadow-focus";
 export const primaryButtonClass =
-  "w-full rounded-lg bg-zinc-900 px-4 py-3 font-medium text-white transition hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300";
-export const linkButtonClass = "text-sm font-medium underline underline-offset-2 disabled:opacity-50";
+  "inline-flex w-full items-center justify-center gap-2 rounded-lg bg-brand px-4 py-3 font-medium text-on-brand transition hover:bg-brand-strong hover:shadow-glow disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none";
+export const secondaryButtonClass =
+  "inline-flex items-center justify-center gap-2 rounded-lg border border-line-strong px-4 py-3 font-medium text-ink transition hover:bg-surface-300 disabled:cursor-not-allowed disabled:opacity-45";
+export const linkButtonClass =
+  "text-sm font-medium text-brand underline underline-offset-[3px] disabled:opacity-45";
+
+export function AuthShell({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
+  return (
+    <OrbitBackdrop className="min-h-dvh">
+      <main className="flex min-h-dvh items-center justify-center px-4 py-10 text-ink">
+        <div className={`w-full ${wide ? "max-w-md" : "max-w-sm"}`}>
+          <p className="mb-6 text-center"><Wordmark className="text-[22px]" /></p>
+          {children}
+        </div>
+      </main>
+    </OrbitBackdrop>
+  );
+}
 
 export function AuthCard({ title, subtitle, children, footer }: {
   title: string;
@@ -14,17 +31,14 @@ export function AuthCard({ title, subtitle, children, footer }: {
   footer?: ReactNode;
 }) {
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-zinc-50 px-4 py-10 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
-      <div className="w-full max-w-sm">
-        <p className="mb-6 text-center text-lg font-semibold tracking-tight">Polar AI</p>
-        <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-          <h1 className="text-xl font-semibold">{title}</h1>
-          {subtitle && <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{subtitle}</p>}
-          <div className="mt-6">{children}</div>
-        </div>
-        {footer && <div className="mt-4 text-center text-sm text-zinc-600 dark:text-zinc-400">{footer}</div>}
+    <AuthShell>
+      <div className="rounded-2xl border border-line bg-surface-100 p-6 shadow-card">
+        <h1 className="text-xl font-semibold">{title}</h1>
+        {subtitle && <p className="mt-1 text-sm text-ink-muted">{subtitle}</p>}
+        <div className="mt-6">{children}</div>
       </div>
-    </main>
+      {footer && <div className="mt-4 text-center text-sm text-ink-muted">{footer}</div>}
+    </AuthShell>
   );
 }
 
@@ -36,8 +50,8 @@ export function Field({ label, id, hint, ...input }: React.InputHTMLAttributes<H
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="text-sm font-medium">{label}</label>
-      <input id={id} name={id} className={inputClass} {...input} />
-      {hint && <p className="text-xs text-zinc-500">{hint}</p>}
+      <input id={id} name={id} className={inputClass} aria-describedby={hint ? `${id}-hint` : undefined} {...input} />
+      {hint && <p id={`${id}-hint`} className="text-xs text-ink-subtle">{hint}</p>}
     </div>
   );
 }
@@ -45,14 +59,14 @@ export function Field({ label, id, hint, ...input }: React.InputHTMLAttributes<H
 export function FormAlert({ error, message }: { error?: string; message?: string }) {
   if (error) {
     return (
-      <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+      <p role="alert" className="rounded-lg border border-danger/30 bg-danger-surface px-3 py-2 text-sm text-danger">
         {error}
       </p>
     );
   }
   if (message) {
     return (
-      <p role="status" className="rounded-lg bg-zinc-100 px-3 py-2 text-sm text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+      <p role="status" className="rounded-lg border border-line bg-info-surface px-3 py-2 text-sm text-ink">
         {message}
       </p>
     );
@@ -60,9 +74,12 @@ export function FormAlert({ error, message }: { error?: string; message?: string
   return null;
 }
 
-export function TextLink({ href, children }: { href: string; children: ReactNode }) {
+export function TextLink({ href, muted = false, children }: { href: string; muted?: boolean; children: ReactNode }) {
   return (
-    <Link href={href} className="font-medium text-zinc-900 underline underline-offset-2 dark:text-zinc-100">
+    <Link
+      href={href}
+      className={`underline underline-offset-[3px] ${muted ? "text-ink-muted" : "font-medium text-brand"}`}
+    >
       {children}
     </Link>
   );

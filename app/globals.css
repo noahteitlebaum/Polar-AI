@@ -1,26 +1,264 @@
 @import "tailwindcss";
 
+/*
+ * Polar AI theme — "Polar Night" (dark, default) and "Polar Day" (light).
+ * Source of truth: the Polar AI design system artifact (tokens.json).
+ * Use the Tailwind utilities generated below (bg-surface-100, text-ink, border-line, bg-brand…);
+ * never hard-code hex values or Tailwind palette colors (zinc, emerald…) in components.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+  --surface-000: #05060b;
+  --surface-100: #0b0d16;
+  --surface-200: #111523;
+  --surface-300: #1a2033;
+  --line: #232a40;
+  --line-strong: #3a4462;
+  --ink: #f3f6ff;
+  --ink-muted: #a6aec6;
+  --ink-subtle: #8a93ad;
+  --brand: #4da3ff;
+  --brand-strong: #2f7bff;
+  --on-brand: #04122b;
+  --ice: #8fd3ff;
+  --glow-ring: #1f4fd1;
+  --provider-openai: #2dd4bf;
+  --provider-anthropic: #ff8a4c;
+  --provider-google: #a78bfa;
+  --provider-xai: #c3c9d8;
+  --success: #3ddc97;
+  --warning: #ffc857;
+  --danger: #ff7a7a;
+  --danger-surface: #2a0f16;
+  --info-surface: #0d1a33;
+  --elev-card: 0 0 0 1px rgba(77, 163, 255, 0.08), 0 12px 40px rgba(0, 0, 0, 0.6);
+  --elev-glow: 0 0 24px rgba(77, 163, 255, 0.45);
+  --elev-focus: 0 0 0 3px rgba(77, 163, 255, 0.45);
+  /* Chat-theme slots (overridden per provider below). */
+  --bubble: var(--surface-200);
+  --composer: var(--surface-200);
+  --elev-composer: none;
+  --elev-menu: 0 12px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --font-ui-family: var(--font-geist-sans);
+  --font-reply-family: var(--font-ui-family);
+  --font-display-family: var(--font-ui-family);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@media (prefers-color-scheme: light) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    color-scheme: light;
+    --surface-000: #f5f8ff;
+    --surface-100: #ffffff;
+    --surface-200: #eaf0fb;
+    --surface-300: #dde5f4;
+    --line: #d3dcee;
+    --line-strong: #a9b6d1;
+    --ink: #0a1020;
+    --ink-muted: #4a5470;
+    --ink-subtle: #5f6884;
+    --brand: #1557e0;
+    --brand-strong: #0f47bd;
+    --on-brand: #ffffff;
+    --ice: #5fb6ff;
+    --glow-ring: #b9d4ff;
+    --provider-openai: #0b7a6e;
+    --provider-anthropic: #b0480a;
+    --provider-google: #6d4fd6;
+    --provider-xai: #5b6273;
+    --success: #0b7a50;
+    --warning: #8a4f00;
+    --danger: #b42828;
+    --danger-surface: #fdecec;
+    --info-surface: #e6efff;
+    --elev-card: 0 1px 2px rgba(10, 16, 32, 0.06), 0 8px 24px rgba(10, 16, 32, 0.08);
+    --elev-glow: 0 0 18px rgba(21, 87, 224, 0.25);
+    --elev-focus: 0 0 0 3px rgba(21, 87, 224, 0.35);
+    --elev-menu: 0 12px 32px rgba(10, 16, 32, 0.14), 0 2px 6px rgba(10, 16, 32, 0.06);
   }
 }
 
+@theme inline {
+  --color-surface-000: var(--surface-000);
+  --color-surface-100: var(--surface-100);
+  --color-surface-200: var(--surface-200);
+  --color-surface-300: var(--surface-300);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-subtle: var(--ink-subtle);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-on-brand: var(--on-brand);
+  --color-ice: var(--ice);
+  --color-glow-ring: var(--glow-ring);
+  --color-provider-openai: var(--provider-openai);
+  --color-provider-anthropic: var(--provider-anthropic);
+  --color-provider-google: var(--provider-google);
+  --color-provider-xai: var(--provider-xai);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-danger-surface: var(--danger-surface);
+  --color-info-surface: var(--info-surface);
+
+  --shadow-card: var(--elev-card);
+  --shadow-glow: var(--elev-glow);
+  --shadow-focus: var(--elev-focus);
+  --color-bubble: var(--bubble);
+  --color-composer: var(--composer);
+  --shadow-composer: var(--elev-composer);
+  --shadow-menu: var(--elev-menu);
+  --font-ui: var(--font-ui-family), ui-sans-serif, system-ui, sans-serif;
+  --font-reply: var(--font-reply-family), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display-family), ui-sans-serif, system-ui, sans-serif;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--surface-000);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+
+/* Focus: 2px solid brand outline on every interactive element (3:1+ on all surfaces). */
+:where(a, button, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* Native <option> lists don't inherit dark surfaces everywhere; keep them readable. */
+option {
+  background: var(--surface-100);
+  color: var(--ink);
+}
+
+/* Orbit backdrop glow (see components/brand.tsx). */
+.polar-orbit-glow {
+  background:
+    radial-gradient(60% 50% at 50% 45%, color-mix(in srgb, var(--glow-ring) 22%, transparent), transparent 70%),
+    var(--surface-000);
+}
+
+@keyframes polar-blink {
+  50% { opacity: 0.2; }
+}
+.polar-caret {
+  animation: polar-blink 1s steps(2) infinite;
+  box-shadow: 0 0 8px var(--ice);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .polar-caret { animation: none; }
+}
+
+/*
+ * Provider chat themes. The chat root sets data-theme="<provider>" for the selected model,
+ * re-pointing the tokens above so the whole chat takes on that app's look (dark + light).
+ * Fonts: Gemini uses Google Sans; Claude/ChatGPT/Grok ship proprietary fonts, so the closest
+ * free matches are used (Source Serif 4 for Claude's serif, Inter, Geist).
+ */
+[data-theme="openai"] {
+  --surface-000: #212121; --surface-100: #181818; --surface-200: #303030; --surface-300: #3a3a3a;
+  --line: #383838; --line-strong: #4a4a4a;
+  --ink: #ececec; --ink-muted: #b4b4b4; --ink-subtle: #8f8f8f;
+  --brand: #ececec; --brand-strong: #ffffff; --on-brand: #0d0d0d; --ice: #ececec;
+  --bubble: #303030; --composer: #303030; --elev-composer: none;
+  --elev-glow: none; --elev-focus: none;
+  --font-ui-family: var(--font-inter);
+}
+[data-theme="anthropic"] {
+  --surface-000: #262624; --surface-100: #1f1e1d; --surface-200: #30302e; --surface-300: #3a3936;
+  --line: #3e3e38; --line-strong: #52514a;
+  --ink: #faf9f5; --ink-muted: #c2c0b6; --ink-subtle: #9c9a92;
+  --brand: #d97757; --brand-strong: #c6613f; --on-brand: #ffffff; --ice: #d97757;
+  --bubble: #141413; --composer: #30302e; --elev-composer: 0 4px 20px rgba(0, 0, 0, 0.25);
+  --elev-glow: none; --elev-focus: none;
+  --font-ui-family: var(--font-inter);
+  --font-reply-family: var(--font-source-serif);
+  --font-display-family: var(--font-source-serif);
+}
+[data-theme="google"] {
+  --surface-000: #131314; --surface-100: #1e1f20; --surface-200: #282a2c; --surface-300: #333537;
+  --line: #3c4043; --line-strong: #5f6368;
+  --ink: #e3e3e3; --ink-muted: #c4c7c5; --ink-subtle: #9aa0a6;
+  --brand: #a8c7fa; --brand-strong: #d3e3fd; --on-brand: #062e6f; --ice: #a8c7fa;
+  --bubble: #333537; --composer: #1e1f20; --elev-composer: 0 6px 20px rgba(0, 0, 0, 0.35);
+  --elev-glow: none; --elev-focus: none;
+  --font-ui-family: var(--font-google-sans);
+}
+[data-theme="xai"] {
+  --surface-000: #151515; --surface-100: #0f0f0f; --surface-200: #1f1f1f; --surface-300: #2a2a2a;
+  --line: #262626; --line-strong: #3b3b3b;
+  --ink: #fcfcfc; --ink-muted: #a3a3a3; --ink-subtle: #7d7d7d;
+  --brand: #fcfcfc; --brand-strong: #ffffff; --on-brand: #0f0f0f; --ice: #fcfcfc;
+  --bubble: #242424; --composer: #1f1f1f; --elev-composer: none;
+  --elev-glow: none; --elev-focus: none;
+  --font-ui-family: var(--font-geist-sans);
+}
+
+@media (prefers-color-scheme: light) {
+  [data-theme="openai"] {
+    --surface-000: #ffffff; --surface-100: #f9f9f9; --surface-200: #f4f4f4; --surface-300: #ececec;
+    --line: #e5e5e5; --line-strong: #d9d9d9;
+    --ink: #0d0d0d; --ink-muted: #5d5d5d; --ink-subtle: #8f8f8f;
+    --brand: #0d0d0d; --brand-strong: #000000; --on-brand: #ffffff; --ice: #0d0d0d;
+    --bubble: #f4f4f4; --composer: #ffffff; --elev-composer: 0 4px 16px rgba(0, 0, 0, 0.06);
+  }
+  [data-theme="anthropic"] {
+    --surface-000: #faf9f5; --surface-100: #f5f4ed; --surface-200: #f0eee6; --surface-300: #e8e6dc;
+    --line: #e5e3da; --line-strong: #d1cfc5;
+    --ink: #141413; --ink-muted: #5e5d59; --ink-subtle: #87867f;
+    --brand: #c96442; --brand-strong: #b05730; --on-brand: #ffffff; --ice: #c96442;
+    --bubble: #f0eee6; --composer: #ffffff; --elev-composer: 0 4px 20px rgba(0, 0, 0, 0.035);
+  }
+  [data-theme="google"] {
+    /* Sampled from gemini.google.com (light): white sidebar, warm-grey canvas, white floating composer. */
+    --surface-000: #faf9f9; --surface-100: #ffffff; --surface-200: #f2f0f0; --surface-300: #ebe9e9;
+    --line: #e3e3e3; --line-strong: #c4c7c5;
+    --ink: #1f1f1f; --ink-muted: #444746; --ink-subtle: #737373;
+    --brand: #0b57d0; --brand-strong: #0842a0; --on-brand: #ffffff; --ice: #0b57d0;
+    --bubble: #e9eef6; --composer: #ffffff;
+    --elev-composer: 0 2px 6px rgba(0, 0, 0, 0.04), 0 6px 20px rgba(0, 0, 0, 0.07);
+  }
+  [data-theme="xai"] {
+    --surface-000: #fcfcfc; --surface-100: #f5f5f5; --surface-200: #f0f0f0; --surface-300: #e8e8e8;
+    --line: #e8e8e8; --line-strong: #d4d4d4;
+    --ink: #0f0f0f; --ink-muted: #5c5c5c; --ink-subtle: #8a8a8a;
+    --brand: #0f0f0f; --brand-strong: #000000; --on-brand: #ffffff; --ice: #0f0f0f;
+    --bubble: #f0f0f0; --composer: #ffffff;
+  }
+}
+
+/* Gemini's gradient greeting. */
+.gemini-gradient {
+  background: linear-gradient(74deg, #4285f4 0%, #9b72cb 18%, #d96570 34%, #d96570 45%, #9b72cb 60%, #4285f4 80%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Rail tiles (fixed colors so each app is recognisable in every theme). */
+.tile-openai { background: #10a37f; color: #ffffff; }
+.tile-anthropic { background: #d97757; color: #ffffff; }
+.tile-google { background: linear-gradient(135deg, #4285f4, #9b72cb 60%, #d96570); color: #ffffff; }
+.tile-xai { background: #000000; color: #ffffff; box-shadow: inset 0 0 0 1px #3b3b3b; }
+
+[data-theme] { transition: background-color 0.2s ease, color 0.2s ease; }
+
+/* Plain-black company logos turn white on dark themes. */
+@media (prefers-color-scheme: dark) {
+  .logo-mono { filter: invert(1); }
+}
+
+/* Model menu pop-in. */
+@keyframes menu-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+.model-menu { animation: menu-in 0.14s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .model-menu { animation: none; }
 }

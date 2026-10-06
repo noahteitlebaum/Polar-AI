@@ -1,0 +1,122 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { anthropic } from "./anthropic";
+import { google } from "./google";
+import { apiKeyFor, isLive } from "./index";
+import { openai } from "./openai";
+import { readSse } from "./sse";
+import { normalizeTurns, type StreamArgs, type StreamEvent, type Usage } from "./types";
+import { xai } from "./xai";
+import type { ModelOption } from "../../config/models";
+
+// Mock providers only: no live API calls.
+const model = { apiModel: "test-model", label: "Test", inputPrice: 1, outputPrice: 2 } as ModelOption;
+const args = (): StreamArgs => ({
+  model, system: "sys", maxOutput: 100, apiKey: "k", signal: new AbortController().signal,
+  history: [{ role: "user", content: "hi" }, { role: "assistant", content: "yo" }, { role: "user", content: "again" }],
+});
+
+function sseResponse(events: string[], status = 200) {
+  const body = new ReadableStream({
+    start(c) {
+      const enc = new TextEncoder();
+      // split awkwardly to exercise buffering
+      const all = events.map((e) => `${e}\n\n`).join("");
+      for (let i = 0; i < all.length; i += 7) c.enqueue(enc.encode(all.slice(i, i + 7)));
+      c.close();
+    },
+  });
+  return new Response(body, { status });
+}
+
+async function collect(it: AsyncIterable<StreamEvent>) {
+  let text = "";
+  let usage: Usage | undefined;
+  for await (const ev of it) {
+    if (ev.delta) text += ev.delta;
+    if (ev.usage) usage = ev.usage;
+  }
+  return { text, usage };
+}
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe("readSse", () => {
+  it("parses events split across chunks, with CRLF and comments", async () => {
+    const out: { event?: string; data: string }[] = [];
+    const res = sseResponse([": ping", "event: a\r\ndata: 1", "data: x\ndata: y"]);
+    for await (const e of readSse(res.body!)) out.push(e);
+    expect(out).toEqual([{ event: "a", data: "1" }, { event: undefined, data: "x\ny" }]);
+  });
+});
+
+describe("normalizeTurns", () => {
+  it("merges repeated roles and drops a leading assistant turn", () => {
+    expect(normalizeTurns([
+      { role: "assistant", content: "a" }, { role: "user", content: "q1" }, { role: "user", content: "q2" }, { role: "assistant", content: "" },
+    ])).toEqual([{ role: "user", content: "q1\n\nq2" }]);
+  });
+});
+
+describe("adapters", () => {
+  it("openai: streams text and usage (reasoning counted in output)", async () => {
+    const fetchMock = vi.fn(async () => sseResponse([
+      `data: ${JSON.stringify({ type: "response.output_text.delta", delta: "Hel" })}`,
+      `data: ${JSON.stringify({ type: "response.output_text.delta", delta: "lo" })}`,
+      `data: ${JSON.stringify({ type: "response.completed", response: { usage: { input_tokens: 10, output_tokens: 5, output_tokens_details: { reasoning_tokens: 2 } } } })}`,
+    ]));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await collect(openai.stream(args()))).toEqual({ text: "Hello", usage: { input: 10, output: 5, reasoning: 2, cached: 0 } });
+    const body = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    expect(body).toMatchObject({ model: "test-model", instructions: "sys", max_output_tokens: 100, stream: true });
+  });
+
+  it("anthropic: sends system separately and totals usage", async () => {
+    const fetchMock = vi.fn(async () => sseResponse([
+      `event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { usage: { input_tokens: 7, cache_read_input_tokens: 3, output_tokens: 1 } } })}`,
+      `event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text: "Hi" } })}`,
+      `event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", usage: { output_tokens: 9 } })}`,
+      `event: message_stop\ndata: ${JSON.stringify({ type: "message_stop" })}`,
+    ]));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await collect(anthropic.stream(args()))).toEqual({ text: "Hi", usage: { input: 10, output: 9, reasoning: 0, cached: 3 } });
+    const body = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    expect(body.system).toBe("sys");
+    expect(body.messages[0]).toEqual({ role: "user", content: "hi" });
+  });
+
+  it("google: maps assistant→model, skips thoughts, bills thinking as output", async () => {
+    const fetchMock = vi.fn(async () => sseResponse([
+      `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "hmm", thought: true }, { text: "A" }] } }] })}`,
+      `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "B" }] } }], usageMetadata: { promptTokenCount: 4, candidatesTokenCount: 2, thoughtsTokenCount: 3 } })}`,
+    ]));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await collect(google.stream(args()))).toEqual({ text: "AB", usage: { input: 4, output: 5, reasoning: 3, cached: 0 } });
+    const body = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    expect(body.contents[1].role).toBe("model");
+  });
+
+  it("xai: OpenAI-style chunks with usage", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => sseResponse([
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "G" } }] })}`,
+      `data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 3, completion_tokens: 2, completion_tokens_details: { reasoning_tokens: 1 } } })}`,
+      "data: [DONE]",
+    ])));
+    expect(await collect(xai.stream(args()))).toEqual({ text: "G", usage: { input: 3, output: 3, reasoning: 1, cached: 0 } });
+  });
+
+  it("maps HTTP errors to provider error codes", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("no", { status: 429 })));
+    await expect(collect(anthropic.stream(args()))).rejects.toMatchObject({ code: "rate_limit", started: false });
+  });
+});
+
+describe("live switch and keys", () => {
+  it("is off unless LIVE_MODELS=on", () => {
+    expect(isLive({})).toBe(false);
+    expect(isLive({ LIVE_MODELS: "ON " })).toBe(true);
+  });
+  it("reads keys from env only", () => {
+    expect(apiKeyFor("google", { GEMINI_API_KEY: " g " })).toBe("g");
+    expect(apiKeyFor("xai", {})).toBeNull();
+  });
+});

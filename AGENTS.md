@@ -3,7 +3,7 @@
 Read this first in every AI session. Also read `docs/PRODUCT_SPEC.md`, `docs/ARCHITECTURE.md`, and `docs/TASKS.md`. If anything here conflicts with a direct instruction from Noah, follow Noah and update this file.
 
 ## What this is
-A mobile-friendly web app that gives verified @uwo.ca students one place to use OpenAI, Anthropic (Claude), Google (Gemini) and xAI (Grok). Students can switch models inside a saved conversation and keep the context. **Launch: Monday Oct 19 2026.**
+A mobile-friendly web app that gives verified @uwo.ca students one place to use OpenAI, Anthropic (Claude), Google (Gemini) and xAI (Grok). Each AI app (ChatGPT, Claude, Gemini, Grok) has its own chat list; inside a chat, students can switch between that app's models and keep the context. Chats never carry over between apps (Noah, Oct 2026). **Launch: Monday Oct 19 2026.**
 
 ## Stack (provisional; change it here if it changes)
 - Next.js (App Router) + TypeScript + Tailwind
@@ -37,8 +37,16 @@ npm run test:live  # small opt-in live checks against all 4 providers (costs mon
 10. Use synthetic accounts and data only. Never use real student chats in prompts, tests or screenshots.
 
 ## Out of scope for launch (don't build unless the team agrees)
-Model comparison, in-app image generation and upload, smart model routing, extra models.
+Model comparison, smart model routing, connectors (Drive/GitHub…), coding/computer agents (Codex, Claude Code, Cowork-style).
 Optional only after all launch checks pass: PDFs, web search, course folders, preferences, memory across chats.
+**Built at Noah's request (Oct 2026):** projects (per app, with instructions) and image generation (Gemini, Grok; OpenAI once its price is set). Both go through the same budget checks as chat.
+
+## Where things live (server)
+- `supabase/migrations/0001_core.sql` — tables, RLS, `reserve_budget` / `settle_budget` (callable only with the secret key), private `generated` image bucket. Money is in micros (millionths of $).
+- `lib/providers/*` — one adapter per provider (fetch + SSE, no SDKs). `LIVE_MODELS=on` turns on real calls; otherwise demo replies at no cost.
+- `lib/chat/context.ts` — context policy, cost and reservation maths. `lib/billing/budget.ts` — reserve/settle/rate limit/provider switch.
+- `app/api/chat` (NDJSON stream), `app/api/images`, `app/api/conversations`, `app/api/projects`, `app/api/usage`.
+- `config/models.ts` — model ids, prices, context caps, image models. Prices checked Oct 5 2026; re-check before launch.
 
 ## How to work
 - One bounded task at a time, taken from `docs/TASKS.md`, with acceptance criteria.
@@ -54,3 +62,8 @@ Optional only after all launch checks pass: PDFs, web search, course folders, pr
 - Server-side enforcement exists for any access, ownership or budget rule touched.
 - No secrets or message content in logs.
 - Docs updated if a decision changed.
+
+## UI theme
+All styling uses the Polar AI design system ("Polar Night" dark default, "Polar Day" light), defined as CSS variables in `app/globals.css` and exposed as Tailwind utilities (`bg-surface-100`, `text-ink-muted`, `border-line`, `bg-brand`, `text-on-brand`, `bg-provider-anthropic`, `shadow-card`…). Never use Tailwind palette colors (zinc, red…) or raw hex in components. Brand pieces (`Wordmark`, `OrbitBackdrop`, `ProviderDot`) live in `components/brand.tsx`; logo PNGs in `public/brand/`. Provider colors are dots beside the model name.
+
+**Chat themes (Noah's decision, Oct 2026):** the chat screen has a left rail with each AI app's logo (ChatGPT, Claude, Gemini, Grok). Picking one opens that app's own chat list and re-skins the chat to look like that app: `data-theme="<provider>"` on the chat root re-points the tokens (colors, fonts) in `app/globals.css`; layout differences (greeting, composer/bubble shapes, reply font, disclaimer) live in `config/themes.ts`. The model menu in the message box (`components/model-menu.tsx`) lists only that app's models from `config/models.ts`. Logos are files in `public/providers/` set via `logo` in `config/themes.ts`. Auth pages and the rest of the app stay on Polar Night/Day.

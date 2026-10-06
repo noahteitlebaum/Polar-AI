@@ -1,0 +1,77 @@
+import type { ProviderId } from "./models";
+
+// Per-provider chat themes. Colors and fonts live in app/globals.css under [data-theme="<provider>"];
+// this file holds the layout differences (greeting, shapes) that make each one feel like the original app.
+export interface ProviderTheme {
+  appName: string;      // what the rail tile says
+  monogram: string;     // letter on the tile when no logo file is set
+  logo?: string;        // official logo in /public/providers
+  logoMono?: boolean;   // logo is plain black: inverted to white in dark mode
+  itemClass: string;    // shape of rows in the chat list
+  inlineComposer?: boolean; // model menu + send on the same row as the input (Gemini)
+  disclaimer: string;
+  greeting: string;
+  greetingClass: string;
+  composerClass: string;
+  sendClass: string;
+  userBubbleClass: string;
+  replyClass: string;
+}
+
+export const THEMES: Record<ProviderId, ProviderTheme> = {
+  openai: {
+    appName: "ChatGPT",
+    monogram: "G",
+    logo: "/providers/openai.webp",
+    logoMono: true,
+    itemClass: "rounded-lg",
+    disclaimer: "ChatGPT can make mistakes. Check important info.",
+    greeting: "What can I help with?",
+    greetingClass: "text-[28px] font-normal tracking-tight",
+    composerClass: "rounded-[28px] border border-line bg-composer shadow-composer",
+    sendClass: "h-9 w-9 rounded-full",
+    userBubbleClass: "rounded-3xl bg-bubble px-5 py-2.5",
+    replyClass: "text-[16px] leading-7",
+  },
+  anthropic: {
+    appName: "Claude",
+    monogram: "C",
+    logo: "/providers/claude.png",
+    itemClass: "rounded-lg",
+    disclaimer: "Claude can make mistakes. Please double-check responses.",
+    greeting: "How can I help you today?",
+    greetingClass: "font-display text-[40px] font-light tracking-tight",
+    composerClass: "rounded-[20px] border border-line bg-composer shadow-composer",
+    sendClass: "h-8 w-8 rounded-lg",
+    userBubbleClass: "rounded-xl bg-bubble px-4 py-2.5",
+    replyClass: "font-reply text-[17px] leading-[1.65]",
+  },
+  google: {
+    appName: "Gemini",
+    monogram: "G",
+    logo: "/providers/gemini.webp",
+    itemClass: "rounded-full",
+    inlineComposer: true,
+    disclaimer: "Gemini is AI and can make mistakes.",
+    greeting: "Hello there",
+    greetingClass: "gemini-gradient text-[44px] font-medium tracking-tight",
+    composerClass: "rounded-[36px] border border-transparent bg-composer shadow-composer",
+    sendClass: "h-10 w-10 rounded-full",
+    userBubbleClass: "rounded-[24px] rounded-tr-md bg-bubble px-5 py-3",
+    replyClass: "text-[17px] leading-[1.75]",
+  },
+  xai: {
+    appName: "Grok",
+    monogram: "X",
+    logo: "/providers/grok.webp",
+    logoMono: true,
+    itemClass: "rounded-xl",
+    disclaimer: "Grok can make mistakes. Verify important information.",
+    greeting: "What do you want to know?",
+    greetingClass: "text-[32px] font-medium tracking-tight",
+    composerClass: "rounded-[28px] border border-line-strong bg-composer",
+    sendClass: "h-9 w-9 rounded-full",
+    userBubbleClass: "rounded-3xl rounded-br-lg border border-line bg-bubble px-5 py-2.5",
+    replyClass: "text-[16px] leading-7",
+  },
+};

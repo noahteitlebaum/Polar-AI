@@ -41,7 +41,7 @@ export function LoginForm({ initialMessage }: { initialMessage?: string }) {
         placeholder="you@uwo.ca" defaultValue={state.email} key={state.email} />
       <Field label="Password" id="password" type="password" required autoComplete="current-password" />
       <div className="-mt-2 text-right">
-        <Link href="/reset" className="text-sm text-zinc-600 underline underline-offset-2 dark:text-zinc-400">
+        <Link href="/reset" className="text-sm text-ink-muted underline underline-offset-[3px]">
           Forgot password?
         </Link>
       </div>

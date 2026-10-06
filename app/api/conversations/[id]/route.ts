@@ -1,0 +1,74 @@
+import { getModel } from "@/config/models";
+import { isUuid, json, requireAppUser } from "@/lib/api";
+
+// GET    /api/conversations/:id → messages (generated images come back as short-lived signed URLs)
+// PATCH  /api/conversations/:id { title?, projectId?, modelId? }
+// DELETE /api/conversations/:id
+export async function GET(_: Request, ctx: RouteContext<"/api/conversations/[id]">) {
+  const auth = await requireAppUser();
+  if ("error" in auth) return auth.error;
+  const { id } = await ctx.params;
+  if (!isUuid(id)) return json({ error: "not_found" }, 404);
+
+  const { data: conv } = await auth.supabase.from("conversations").select("id").eq("id", id).maybeSingle();
+  if (!conv) return json({ error: "not_found" }, 404);
+  const { data: rows, error } = await auth.supabase
+    .from("messages")
+    .select("id, role, kind, content, image_path, model_id, status")
+    .eq("conversation_id", id)
+    .order("seq");
+  if (error) return json({ error: "load_failed" }, 500);
+
+  const paths = (rows ?? []).filter((m) => m.image_path).map((m) => m.image_path as string);
+  const urls = new Map<string, string>();
+  if (paths.length) {
+    const { data: signed } = await auth.supabase.storage.from("generated").createSignedUrls(paths, 60 * 60);
+    for (const s of signed ?? []) if (s.path && s.signedUrl) urls.set(s.path, s.signedUrl);
+  }
+
+  return json({
+    messages: (rows ?? []).map((m) => ({
+      id: m.id,
+      role: m.role,
+      kind: m.kind,
+      content: m.content,
+      imageUrl: m.image_path ? urls.get(m.image_path) ?? null : undefined,
+      modelId: m.model_id ?? undefined,
+      status: m.status,
+    })),
+  });
+}
+
+export async function PATCH(request: Request, ctx: RouteContext<"/api/conversations/[id]">) {
+  const auth = await requireAppUser();
+  if ("error" in auth) return auth.error;
+  const { id } = await ctx.params;
+  if (!isUuid(id)) return json({ error: "not_found" }, 404);
+  const body = (await request.json().catch(() => ({}))) as { title?: unknown; projectId?: unknown; modelId?: unknown };
+
+  const patch: Record<string, unknown> = {};
+  if (typeof body.title === "string" && body.title.trim()) patch.title = body.title.trim().slice(0, 120);
+  if (body.projectId === null || isUuid(body.projectId)) patch.project_id = body.projectId;
+  if (typeof body.modelId === "string") {
+    const { data: conv } = await auth.supabase.from("conversations").select("provider").eq("id", id).maybeSingle();
+    const model = getModel(body.modelId);
+    if (!conv || !model || model.provider !== conv.provider) return json({ error: "unknown_model" }, 400);
+    patch.model_id = model.id;
+  }
+  if (!Object.keys(patch).length) return json({ error: "bad_request" }, 400);
+
+  // RLS also checks that a project belongs to this user and the same app.
+  const { error } = await auth.supabase.from("conversations").update(patch).eq("id", id);
+  if (error) return json({ error: "save_failed" }, 400);
+  return json({ ok: true });
+}
+
+export async function DELETE(_: Request, ctx: RouteContext<"/api/conversations/[id]">) {
+  const auth = await requireAppUser();
+  if ("error" in auth) return auth.error;
+  const { id } = await ctx.params;
+  if (!isUuid(id)) return json({ error: "not_found" }, 404);
+  const { error } = await auth.supabase.from("conversations").delete().eq("id", id);
+  if (error) return json({ error: "delete_failed" }, 500);
+  return json({ ok: true });
+}
