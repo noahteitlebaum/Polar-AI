@@ -1,4 +1,4 @@
-# Architecture Note — Polar AI
+# Architecture Note — Orbit AI
 
 ## Layers (keep them separate)
 ```

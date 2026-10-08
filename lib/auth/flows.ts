@@ -15,7 +15,7 @@ export async function verifyEmailCode(email: string, rawCode: string): Promise<s
   }
   if (!isAllowedEmail(data.user.email)) {
     await supabase.auth.signOut();
-    return "Polar AI is only open to @uwo.ca email addresses.";
+    return "Orbit AI is only open to @uwo.ca email addresses.";
   }
   return null;
 }

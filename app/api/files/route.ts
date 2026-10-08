@@ -1,4 +1,4 @@
-import { isUuid, json, requireAppUser } from "@/lib/api";
+import { dbError, isUuid, json, requireAppUser } from "@/lib/api";
 import { DOC_TYPES, IMAGE_TYPES, MAX_DOC_BYTES, MAX_IMAGE_BYTES, detectMime, extractDocument } from "@/lib/files/extract";
 
 // Uploads go browser → Supabase Storage directly (uploads/<user>/<fileId>/<name>), then the browser calls:
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
     .select("id, name, kind, status, page_count, error, mime")
     .eq("project_id", projectId)
     .order("created_at", { ascending: false });
-  if (error) return json({ error: "load_failed" }, 500);
+  if (error) return dbError(error, "load_failed");
   return json({ files: (data ?? []).map(toSummary) });
 }
 
@@ -84,7 +84,10 @@ export async function POST(request: Request): Promise<Response> {
     })
     .select("id, name, kind, status, page_count, error, mime")
     .single();
-  if (error || !row) return reject("save_failed");
+  if (error || !row) {
+    await supabase.storage.from("uploads").remove([path]);
+    return dbError(error, "save_failed", 400);
+  }
 
   for (let i = 0; i < chunks.length; i += 500) {
     const batch = chunks.slice(i, i + 500).map((c) => ({ file_id: id, user_id: user.id, page: c.page, chunk_index: c.chunkIndex, content: c.content }));

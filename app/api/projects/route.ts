@@ -1,5 +1,5 @@
 import { isProvider } from "@/config/models";
-import { json, requireAppUser } from "@/lib/api";
+import { dbError, json, requireAppUser } from "@/lib/api";
 
 // Courses (stored as "projects"). New ones are shared by all four apps (provider = null).
 // GET  /api/projects?provider=… → courses visible in this app
@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     .select("id, name, instructions, updated_at")
     .or(`provider.is.null,provider.eq.${provider}`)
     .order("updated_at", { ascending: false });
-  if (error) return json({ error: "load_failed" }, 500);
+  if (error) return dbError(error, "load_failed");
   return json({ projects: data ?? [] });
 }
 
@@ -30,6 +30,6 @@ export async function POST(request: Request) {
     .insert({ user_id: auth.user.id, provider: null, name, instructions })
     .select("id, name, instructions, updated_at")
     .single();
-  if (error) return json({ error: "save_failed" }, 500);
+  if (error) return dbError(error, "save_failed");
   return json({ project: data });
 }

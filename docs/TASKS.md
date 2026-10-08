@@ -1,4 +1,4 @@
-# Task List — Polar AI
+# Task List — Orbit AI
 
 Status: `[ ]` todo · `[~]` in progress · `[x]` done. Keep optional features off the critical path.
 

@@ -19,6 +19,18 @@ export function isLive(env: Record<string, string | undefined> = process.env): b
   return (env.LIVE_MODELS ?? "").trim().toLowerCase() === "on";
 }
 
+/**
+ * Real calls for one app: LIVE_MODELS=on AND that provider's key is set. Apps without a key keep giving
+ * clearly labelled demo replies (no cost), so one provider can go live before the others.
+ */
+export function liveFor(provider: ProviderId, env: Record<string, string | undefined> = process.env): boolean {
+  return isLive(env) && apiKeyFor(provider, env) !== null;
+}
+
+export function liveProviders(env: Record<string, string | undefined> = process.env): ProviderId[] {
+  return (Object.keys(KEY_ENV) as ProviderId[]).filter((p) => liveFor(p, env));
+}
+
 /** The server-side API key for a provider, or null if it isn't set. Never send this to the client. */
 export function apiKeyFor(provider: ProviderId, env: Record<string, string | undefined> = process.env): string | null {
   const v = env[KEY_ENV[provider]]?.trim();

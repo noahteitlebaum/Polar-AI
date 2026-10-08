@@ -41,7 +41,7 @@ export function maxOutputFor(model: Pick<ModelOption, "inputPrice" | "outputPric
 }
 
 export const BASE_SYSTEM_PROMPT =
-  "You are a helpful assistant for university students, used through Polar AI. " +
+  "You are a helpful assistant for university students, used through Orbit AI. " +
   "Earlier assistant turns in this chat may come from a different model of the same family; treat them as the conversation so far. " +
   "Use Markdown and LaTeX ($...$) for maths when helpful.";
 

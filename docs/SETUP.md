@@ -2,7 +2,7 @@
 
 Things code can't do for you. Do them in order.
 
-1. **Install new packages** — in `polar-ai`: `npm install` (adds `unpdf` for PDFs and `mammoth` for Word files).
+1. **Install new packages** — in `orbit-ai`: `npm install` (adds `unpdf` for PDFs and `mammoth` for Word files).
 2. **Database** — Supabase → SQL Editor → New query → paste the *contents* of
    `supabase/migrations/0001_core.sql` → Run. Then the same for `0002_files_courses.sql`.
    Both are safe to run again. Expect "Success. No rows returned".

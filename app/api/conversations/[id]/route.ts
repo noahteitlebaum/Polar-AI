@@ -1,5 +1,5 @@
 import { getModel } from "@/config/models";
-import { isUuid, json, requireAppUser } from "@/lib/api";
+import { dbError, isUuid, json, requireAppUser } from "@/lib/api";
 
 // GET    /api/conversations/:id → messages (generated images come back as short-lived signed URLs)
 // PATCH  /api/conversations/:id { title?, projectId?, modelId? }
@@ -17,7 +17,7 @@ export async function GET(_: Request, ctx: RouteContext<"/api/conversations/[id]
     .select("id, role, kind, content, image_path, model_id, status, attachment_ids, sources")
     .eq("conversation_id", id)
     .order("seq");
-  if (error) return json({ error: "load_failed" }, 500);
+  if (error) return dbError(error, "load_failed");
 
   const paths = (rows ?? []).filter((m) => m.image_path).map((m) => m.image_path as string);
   const urls = new Map<string, string>();
@@ -72,7 +72,7 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/conversati
 
   // RLS also checks that a project belongs to this user and the same app.
   const { error } = await auth.supabase.from("conversations").update(patch).eq("id", id);
-  if (error) return json({ error: "save_failed" }, 400);
+  if (error) return dbError(error, "save_failed", 400);
   return json({ ok: true });
 }
 

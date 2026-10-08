@@ -13,7 +13,7 @@ export interface Usage {
 
 export type StreamEvent = { delta?: string; usage?: Usage };
 
-export type ProviderErrorCode = "timeout" | "rate_limit" | "auth" | "unavailable" | "bad_request" | "not_configured" | "unknown";
+export type ProviderErrorCode = "timeout" | "rate_limit" | "auth" | "unavailable" | "bad_request" | "model_unavailable" | "not_configured" | "unknown";
 
 export class ProviderError extends Error {
   constructor(public code: ProviderErrorCode, public status?: number, public started = false) {
@@ -51,6 +51,7 @@ export interface ProviderAdapter {
 export function errorForStatus(status: number): ProviderError {
   if (status === 401 || status === 403) return new ProviderError("auth", status);
   if (status === 429) return new ProviderError("rate_limit", status);
+  if (status === 404) return new ProviderError("model_unavailable", status); // model id not available to this key
   if (status === 408 || status === 504) return new ProviderError("timeout", status);
   if (status >= 500) return new ProviderError("unavailable", status);
   if (status >= 400) return new ProviderError("bad_request", status);

@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 /*
- * Polar AI theme — "Polar Night" (dark, default) and "Polar Day" (light).
- * Source of truth: the Polar AI design system artifact (tokens.json).
+ * Orbit AI theme — "Orbit Night" (dark, default) and "Orbit Day" (light).
+ * Source of truth: the Orbit AI design system artifact (tokens.json).
  * Use the Tailwind utilities generated below (bg-surface-100, text-ink, border-line, bg-brand…);
  * never hard-code hex values or Tailwind palette colors (zinc, emerald…) in components.
  */
@@ -136,22 +136,22 @@ option {
 }
 
 /* Orbit backdrop glow (see components/brand.tsx). */
-.polar-orbit-glow {
+.orbit-glow {
   background:
     radial-gradient(60% 50% at 50% 45%, color-mix(in srgb, var(--glow-ring) 22%, transparent), transparent 70%),
     var(--surface-000);
 }
 
-@keyframes polar-blink {
+@keyframes orbit-blink {
   50% { opacity: 0.2; }
 }
-.polar-caret {
-  animation: polar-blink 1s steps(2) infinite;
+.orbit-caret {
+  animation: orbit-blink 1s steps(2) infinite;
   box-shadow: 0 0 8px var(--ice);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .polar-caret { animation: none; }
+  .orbit-caret { animation: none; }
 }
 
 /*

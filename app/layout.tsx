@@ -18,7 +18,7 @@ const sourceSerif = Source_Serif_4({ variable: "--font-source-serif", subsets: [
 const googleSans = Google_Sans({ variable: "--font-google-sans", subsets: ["latin"], adjustFontFallback: false });
 
 export const metadata: Metadata = {
-  title: "Polar AI",
+  title: "Orbit AI",
   description: "GPT, Claude, Gemini and Grok in one place for Western students.",
 };
 

@@ -5,7 +5,7 @@ import { LoginForm } from "./login-form";
 
 const NOTICES: Record<string, string> = {
   link_expired: "That link expired or was already used. Sign in with your password instead.",
-  not_uwo: "Polar AI is only open to @uwo.ca email addresses.",
+  not_uwo: "Orbit AI is only open to @uwo.ca email addresses.",
   missing_code: "That link is incomplete. Sign in with your password instead.",
 };
 
@@ -17,7 +17,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
     <AuthCard
       title="Sign in"
       subtitle="Welcome back. Use your @uwo.ca email and password."
-      footer={<>New to Polar AI? <TextLink href="/signup">Create an account</TextLink></>}
+      footer={<>New to Orbit AI? <TextLink href="/signup">Create an account</TextLink></>}
     >
       <LoginForm initialMessage={error ? NOTICES[error] : undefined} />
     </AuthCard>

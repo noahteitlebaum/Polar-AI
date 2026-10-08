@@ -20,7 +20,7 @@ export async function signUpAction(prev: SignUpState, formData: FormData): Promi
 
   if (intent === "back") return { step: "details", email };
   if (!isAllowedEmail(email)) {
-    return { step: "details", email, error: "Polar AI is only open to @uwo.ca email addresses." };
+    return { step: "details", email, error: "Orbit AI is only open to @uwo.ca email addresses." };
   }
 
   if (intent === "verify") {

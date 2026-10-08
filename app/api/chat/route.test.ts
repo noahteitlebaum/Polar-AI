@@ -26,6 +26,7 @@ vi.mock("@/lib/billing/budget", () => ({
 }));
 vi.mock("@/lib/providers", () => ({
   isLive: () => state.live,
+  liveFor: () => state.live && state.key !== null,
   apiKeyFor: () => state.key,
   ADAPTERS: {
     anthropic: {
@@ -111,12 +112,12 @@ describe("POST /api/chat", () => {
     expect(state.fake!.db.messages.filter((m) => m.role === "assistant")).toHaveLength(0);
   });
 
-  it("live: missing API key → 503 not_configured", async () => {
+  it("LIVE_MODELS=on but this app has no key → labelled demo reply, no charge", async () => {
     state.live = true;
     state.key = null;
-    const res = await POST(req({ provider: "anthropic", modelId: "anthropic-default", content: "hello" }));
-    expect(res.status).toBe(503);
-    expect((await res.json()).error).toBe("not_configured");
+    const events = await readEvents(await POST(req({ provider: "anthropic", modelId: "anthropic-default", content: "hello" })));
+    expect(events.map((e) => e.t === "delta" ? e.v : "").join("")).toContain("demo reply");
+    expect(budget.reserve).not.toHaveBeenCalled();
   });
 
   it("retry drops the failed reply and answers the same question once", async () => {

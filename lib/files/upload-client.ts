@@ -28,14 +28,19 @@ export async function uploadFile(file: File, userId: string, projectId?: string)
   const safe = file.name.replace(/[^\w.\- ]+/g, "_").slice(-120) || "file";
   const path = `${userId}/${id}/${safe}`;
   const { error } = await createBrowserSupabase().storage.from("uploads").upload(path, file, { contentType: file.type || undefined, upsert: false });
-  if (error) return { error: "Upload failed. Check your connection and try again." };
+  if (error) {
+    // A missing bucket or storage policy means migration 0002 hasn't been run.
+    const setup = /bucket|policy|row-level|not found/i.test(error.message);
+    return { error: setup ? "File storage isn't set up yet (run migration 0002 in Supabase)." : "Upload failed. Check your connection and try again." };
+  }
   const res = await fetch("/api/files", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id, path, name: file.name, projectId }),
   }).catch(() => null);
   if (!res) return { error: "Upload failed. Check your connection and try again." };
-  const out = (await res.json().catch(() => ({}))) as { file?: UploadedFile; error?: string };
+  const out = (await res.json().catch(() => ({}))) as { file?: UploadedFile; error?: string; message?: string };
+  if (out.error === "db_setup" && out.message) return { error: out.message };
   if (!res.ok || !out.file) {
     return { error: out.error === "unsupported_type" ? "That file type isn't supported." : out.error === "too_large" ? "That file is too large." : "We couldn't process that file." };
   }

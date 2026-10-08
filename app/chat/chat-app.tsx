@@ -31,7 +31,7 @@ type Pending = { key: string; file?: UploadedFile; name: string; uploading: bool
 type ChatSettings = { mode: StudyMode; courseOnly: boolean; summarized?: boolean };
 type ConvSummary = { id: string; title: string; modelId: string; projectId: string | null; updatedAt: string };
 type Project = { id: string; name: string; instructions: string };
-type Usage = { live: boolean; allowance: number; spent: number; reserved: number };
+type Usage = { live: boolean; liveProviders?: ProviderId[]; allowance: number; spent: number; reserved: number };
 
 const APP_KEY = "polar.app.v1";
 const DRAFT = "draft"; // messages key for a chat that hasn't been saved yet
@@ -42,12 +42,17 @@ const dollars = (micros: number) => `$${(micros / 1_000_000).toFixed(2)}`;
 function errorText(code: string, label: string, appName: string): string {
   switch (code) {
     case "budget": return "You've used your budget, so this reply was paused. Your chat is saved.";
-    case "paused": return "Polar AI is paused by the team right now. Your chat is saved — try again later.";
+    case "paused": return "Orbit AI is paused by the team right now. Your chat is saved — try again later.";
     case "rate_limited": return "That's a lot of messages in a minute. Wait a moment, then try again.";
     case "not_configured": return `${label} isn't set up yet (missing API key or price).`;
     case "provider_disabled": return `${appName} is turned off by the team right now. Try another app on the left.`;
     case "no_image_model": return `${appName} can't make images.`;
     case "message_too_long": return "That message is too long. Try splitting it up.";
+    case "model_unavailable": return `${label} isn't available on this API key. Pick another model in the menu.`;
+    case "auth": return `${appName} rejected the API key. It may have expired or been revoked.`;
+    case "rate_limit": return `${appName} is rate-limiting us or the API account is out of credit. Try again shortly.`;
+    case "reserve_failed": return "Couldn't check your budget. Make sure the database migrations have been run.";
+    case "db_setup": return "The database isn't fully set up yet. Run supabase/migrations/0001_core.sql and 0002_files_courses.sql in the Supabase SQL Editor.";
     case "bad_request": return `${label} couldn't handle that request.`;
     default: return `${label} didn't respond. Your chat is saved.`;
   }
@@ -139,6 +144,13 @@ export function ChatApp({ email, userId }: { email: string; userId: string }) {
       if (c && handleAuth(c)) return;
       const list: ConvSummary[] = c?.ok ? (await c.json()).conversations : [];
       const projs: Project[] = p?.ok ? (await p.json()).projects : [];
+      for (const r of [c, p]) {
+        if (r && !r.ok) {
+          const e = (await r.clone().json().catch(() => ({}))) as { message?: string };
+          alertLine(e.message ?? "Couldn't load your chats and courses. Refresh to try again.");
+          break;
+        }
+      }
       setConvs((prev) => ({ ...prev, [provider]: list }));
       setProjects((prev) => ({ ...prev, [provider]: projs }));
       setActiveIds((prev) => (prev[provider] ? prev : { ...prev, [provider]: list[0]?.id ?? null }));
@@ -228,7 +240,17 @@ export function ChatApp({ email, userId }: { email: string; userId: string }) {
 
   async function moveToProject(id: string, projectId: string | null) {
     const res = await fetch(`/api/conversations/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId }) });
-    if (res.ok) setConvs((prev) => ({ ...prev, [provider]: (prev[provider] ?? []).map((c) => (c.id === id ? { ...c, projectId } : c)) }));
+    if (!res.ok) alertLine("Couldn't move the chat. Make sure migration 0002 has been run.");
+    else setConvs((prev) => ({ ...prev, [provider]: (prev[provider] ?? []).map((c) => (c.id === id ? { ...c, projectId } : c)) }));
+  }
+
+  function selectCourse(id: string | null) {
+    setProjectFilter((prev) => ({ ...prev, [provider]: id }));
+    if (id) {
+      newChat();
+      if (!courseFiles[id]) loadCourseFiles(id);
+    }
+    setSidebarOpen(false);
   }
 
   function openCourse(p: Project) {
@@ -243,7 +265,11 @@ export function ChatApp({ email, userId }: { email: string; userId: string }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(v),
     });
-    if (!res.ok) return;
+    if (!res.ok) {
+      const e = (await res.json().catch(() => ({}))) as { message?: string };
+      alertLine(e.message ?? "Couldn't save the course. Try again.");
+      return;
+    }
     const { project } = (await res.json()) as { project: Project };
     // Courses are shared by all four apps.
     setProjects((prev) =>
@@ -261,7 +287,10 @@ export function ChatApp({ email, userId }: { email: string; userId: string }) {
 
   async function deleteProject(id: string) {
     const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
-    if (!res.ok) return;
+    if (!res.ok) {
+      alertLine("Couldn't delete the course. Try again.");
+      return;
+    }
     setProjects((prev) => Object.fromEntries(PROVIDERS.map((pv) => [pv, prev[pv].filter((p) => p.id !== id)])) as Record<ProviderId, Project[]>);
     setConvs((prev) => ({ ...prev, [provider]: (prev[provider] ?? []).map((c) => (c.projectId === id ? { ...c, projectId: null } : c)) }));
     setProjectFilter((prev) => ({ ...prev, [provider]: null }));
@@ -415,7 +444,7 @@ export function ChatApp({ email, userId }: { email: string; userId: string }) {
         list.map((x) =>
           x.id !== replyTmp ? x
             : out.message ? out.message
-            : { ...x, kind: "text", status: "error", error: errorText(out.error ?? "unknown", imageModel?.label ?? "Image model", theme.appName) },
+            : { ...x, status: "error", error: errorText(out.error ?? "unknown", imageModel?.label ?? "Image model", theme.appName) },
         ),
       );
     } finally {
@@ -533,7 +562,7 @@ export function ChatApp({ email, userId }: { email: string; userId: string }) {
     <div data-theme={provider} className="flex h-dvh bg-surface-000 font-ui text-ink">
       {/* App rail */}
       <nav aria-label="AI apps" className="hidden w-[76px] shrink-0 flex-col items-center gap-3 border-r border-line bg-surface-100 py-4 md:flex">
-        <Image src="/brand/polar-ai-mark.png" alt="Polar AI" width={32} height={32} className="mb-3 h-8 w-8 object-contain" />
+        <Image src="/brand/orbit-mark.png" alt="Orbit AI" width={32} height={32} className="logo-mono mb-3 h-8 w-8 object-contain" />
         {PROVIDERS.map((p) => {
           const on = p === provider;
           return (
@@ -583,15 +612,21 @@ export function ChatApp({ email, userId }: { email: string; userId: string }) {
             {projects[provider].map((p) => {
               const on = filter === p.id;
               return (
-                <button key={p.id}
-                  onClick={() => { setProjectFilter((prev) => ({ ...prev, [provider]: on ? null : p.id })); if (!on) newChat(); }}
-                  aria-pressed={on}
-                  className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-[15px] ${theme.itemClass} ${on ? "bg-surface-300 font-medium" : "hover:bg-surface-200"}`}>
-                  <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden className="shrink-0 text-ink-muted">
-                    <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5z" fill="none" stroke="currentColor" strokeWidth="1.3" />
-                  </svg>
-                  <span className="truncate">{p.name}</span>
-                </button>
+                <div key={p.id} className={`group flex items-center ${theme.itemClass} ${on ? "bg-surface-300 font-medium" : "hover:bg-surface-200"}`}>
+                  <button
+                    onClick={() => selectCourse(on ? null : p.id)}
+                    aria-pressed={on}
+                    className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2 text-left text-[15px]">
+                    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden className="shrink-0 text-ink-muted">
+                      <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5z" fill="none" stroke="currentColor" strokeWidth="1.3" />
+                    </svg>
+                    <span className="truncate">{p.name}</span>
+                  </button>
+                  <button onClick={() => openCourse(p)} aria-label={`${p.name} settings and files`} title="Course settings and files"
+                    className="py-1 pl-1.5 pr-3 text-ink-subtle transition hover:text-ink focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100">
+                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden><circle cx="3.5" cy="8" r="1.2" fill="currentColor" /><circle cx="8" cy="8" r="1.2" fill="currentColor" /><circle cx="12.5" cy="8" r="1.2" fill="currentColor" /></svg>
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -615,11 +650,11 @@ export function ChatApp({ email, userId }: { email: string; userId: string }) {
                   </button>
                 )}
                 <button onClick={() => setRenaming(c.id)} aria-label={`Rename ${c.title || "chat"}`}
-                  className="px-1.5 py-1 text-ink-subtle opacity-0 transition hover:text-ink focus-visible:opacity-100 group-hover:opacity-100">
+                  className="px-1.5 py-1 text-ink-subtle transition hover:text-ink focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100">
                   <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden><path d="M10.5 2.5l3 3L6 13H3v-3z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /></svg>
                 </button>
                 <button onClick={() => deleteChat(c.id)} aria-label={`Delete ${c.title || "chat"}`}
-                  className="py-1 pl-1.5 pr-3 text-ink-subtle opacity-0 transition hover:text-danger focus-visible:opacity-100 group-hover:opacity-100">
+                  className="py-1 pl-1.5 pr-3 text-ink-subtle transition hover:text-danger focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100">
                   <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden><path d="M3 4h10M6.5 4V2.5h3V4M5 4l.6 9h4.8L11 4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
                 </button>
               </div>
@@ -682,7 +717,26 @@ export function ChatApp({ email, userId }: { email: string; userId: string }) {
 
         {empty ? (
           <div className="flex flex-1 flex-col items-center justify-center px-4 pb-[12vh]">
-            {activeProject && <p className="mb-2 text-sm text-ink-subtle">New chat in {activeProject.name}</p>}
+            {activeProject && (
+              <div className="mb-6 w-full max-w-3xl rounded-2xl border border-line bg-surface-100 px-4 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden className="shrink-0 text-ink-muted"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5z" fill="none" stroke="currentColor" strokeWidth="1.3" /></svg>
+                  <span className="font-medium">{activeProject.name}</span>
+                  <span className="text-xs text-ink-subtle">
+                    {courseFiles[activeProject.id] ? `${courseFiles[activeProject.id].length} course file${courseFiles[activeProject.id].length === 1 ? "" : "s"}` : "Loading files…"}
+                    {activeProject.instructions.trim() ? " · has instructions" : ""}
+                  </span>
+                  <button onClick={() => openCourse(activeProject)} className="ml-auto rounded-full border border-line-strong px-3 py-1 text-xs font-medium hover:bg-surface-300">
+                    {courseFiles[activeProject.id]?.length ? "Manage files" : "Add course files"}
+                  </button>
+                </div>
+                {courseFiles[activeProject.id]?.length ? (
+                  <p className="mt-1.5 truncate text-xs text-ink-subtle">Answers can cite: {courseFiles[activeProject.id].map((f) => f.name).join(", ")}</p>
+                ) : (
+                  <p className="mt-1.5 text-xs text-ink-subtle">Add lecture slides, readings or assignment specs and every chat in this course can quote them by page.</p>
+                )}
+              </div>
+            )}
             <h1 className={`mb-8 text-center ${theme.greetingClass}`}>{imageMode ? "What should I create?" : chatSettings.mode === "quiz" ? "What should I quiz you on?" : chatSettings.mode === "hints" ? "What are you working on?" : chatSettings.mode === "explain" ? "What should I explain?" : theme.greeting}</h1>
             {composer}
           </div>
@@ -725,13 +779,13 @@ export function ChatApp({ email, userId }: { email: string; userId: string }) {
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img src={m.imageUrl} alt={m.content} className="w-full rounded-2xl border border-line" />
                             </a>
-                          ) : (
+                          ) : m.status === "error" ? null : (
                             <p className="text-sm text-ink-subtle">Image unavailable.</p>
                           )
                         ) : (
                           <div className={`whitespace-pre-wrap ${theme.replyClass}`}>
                             <AnswerText text={m.content} sources={m.sources} />
-                            {m.status === "streaming" && <span aria-label="Writing" className="polar-caret ml-0.5 inline-block h-4 w-1.5 rounded-sm bg-ice align-middle" />}
+                            {m.status === "streaming" && <span aria-label="Writing" className="orbit-caret ml-0.5 inline-block h-4 w-1.5 rounded-sm bg-ice align-middle" />}
                             {m.status === "partial" && <span className="ml-1 text-xs text-ink-subtle">[stopped]</span>}
                           </div>
                         )}
@@ -756,7 +810,7 @@ export function ChatApp({ email, userId }: { email: string; userId: string }) {
         )}
         <p className="px-4 pb-3 pt-2 text-center text-xs text-ink-muted">
           {theme.disclaimer}
-          {usage && !usage.live && <span className="text-ink-subtle"> Demo mode: replies are fake until LIVE_MODELS=on.</span>}
+          {usage && !usage.liveProviders?.includes(provider) && <span className="text-ink-subtle"> Demo mode: {theme.appName} replies are fake until its API key is added.</span>}
         </p>
       </main>
 

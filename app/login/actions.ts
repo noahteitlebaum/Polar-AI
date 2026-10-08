@@ -13,7 +13,7 @@ export type SignInState = {
   message?: string;
 };
 
-const NOT_UWO = "Polar AI is only open to @uwo.ca email addresses.";
+const NOT_UWO = "Orbit AI is only open to @uwo.ca email addresses.";
 
 export async function signInAction(prev: SignInState, formData: FormData): Promise<SignInState> {
   const intent = String(formData.get("intent") ?? "signin");

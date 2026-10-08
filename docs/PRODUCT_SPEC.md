@@ -1,4 +1,4 @@
-# Product Spec — Polar AI (Launch v1)
+# Product Spec — Orbit AI (Launch v1)
 
 **Launch:** Mon Oct 19 2026 · **Audience:** Western students with a verified @uwo.ca email
 **Owners:** Noah (tech) · Jake (economics, priorities, testing) · Natan (outreach, onboarding, support)

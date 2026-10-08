@@ -3,7 +3,7 @@ import { getUserAccess } from "@/lib/auth/session";
 import { AuthShell, linkButtonClass } from "@/components/auth-ui";
 import { signOut } from "../login/actions";
 
-export const metadata = { title: "You're on the waitlist · Polar AI" };
+export const metadata = { title: "You're on the waitlist · Orbit AI" };
 
 export default async function WaitlistPage() {
   const result = await getUserAccess();
@@ -25,7 +25,7 @@ export default async function WaitlistPage() {
         </div>
         <h1 className="mt-4 text-2xl font-semibold tracking-tight">You&apos;re on the waitlist</h1>
         <p className="mt-3 text-ink-muted">
-          Thanks for signing up. Polar AI brings GPT, Claude, Gemini and Grok together in one place for
+          Thanks for signing up. Orbit AI brings GPT, Claude, Gemini and Grok together in one place for
           Western students, and we&apos;re opening access soon.
         </p>
         <p className="mt-3 text-ink-muted">

@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { getModel, isProvider } from "@/config/models";
-import { isUuid, json, requireAppUser } from "@/lib/api";
+import { dbError, isUuid, json, requireAppUser } from "@/lib/api";
 import { isProviderDisabled, overRateLimit, reserve, settle } from "@/lib/billing/budget";
 import { buildContext, costMicros, estimateTokens, maxOutputFor, reservationMicros, STUDY_MODES, systemPrompt, type StudyMode } from "@/lib/chat/context";
 import { citedSources, gatherMaterial, IMAGE_TOKENS, loadImages, MAX_IMAGES, type Source } from "@/lib/chat/material";
 import { SUMMARY_TOKENS, updateSummary } from "@/lib/chat/summary";
-import { ADAPTERS, apiKeyFor, isLive } from "@/lib/providers";
+import { ADAPTERS, apiKeyFor, liveFor } from "@/lib/providers";
 import { ProviderError, type ChatTurn, type StreamEvent, type Usage } from "@/lib/providers/types";
 
 // POST /api/chat — auth → ownership → gates → context (+ course material, images, summary) → reserve → stream → reconcile → save.
@@ -42,7 +42,8 @@ export async function POST(request: Request): Promise<Response> {
   let conversation: { id: string; title: string; provider: string; project_id: string | null; mode: string; course_only: boolean; summary: string | null; summary_upto: number | null };
   const convCols = "id, title, provider, project_id, mode, course_only, summary, summary_upto";
   if (isUuid(body.conversationId)) {
-    const { data } = await supabase.from("conversations").select(convCols).eq("id", body.conversationId).maybeSingle();
+    const { data, error } = await supabase.from("conversations").select(convCols).eq("id", body.conversationId).maybeSingle();
+    if (error) return dbError(error, "load_failed");
     if (!data) return json({ error: "not_found" }, 404);
     if (data.provider !== provider) return json({ error: "wrong_app" }, 400);
     conversation = data;
@@ -53,7 +54,7 @@ export async function POST(request: Request): Promise<Response> {
       .insert({ user_id: user.id, provider, model_id: model.id, title: (content || "Files").slice(0, 60), project_id: isUuid(body.projectId) ? body.projectId : null })
       .select(convCols)
       .single();
-    if (error || !data) return json({ error: "save_failed" }, 500);
+    if (error || !data) return dbError(error, "save_failed");
     conversation = data;
   }
 
@@ -85,7 +86,7 @@ export async function POST(request: Request): Promise<Response> {
       .insert({ conversation_id: conversation.id, user_id: user.id, role: "user", content, attachment_ids: linked })
       .select("id")
       .single();
-    if (error || !data) return json({ error: "save_failed" }, 500);
+    if (error || !data) return dbError(error, "save_failed");
     userMessageId = data.id;
   }
 
@@ -111,7 +112,7 @@ export async function POST(request: Request): Promise<Response> {
   });
   const imageCount = Math.min(MAX_IMAGES, rows.reduce((n, r) => n + (r.attachment_ids?.length ?? 0), 0));
 
-  const live = isLive();
+  const live = liveFor(provider);
   const requestId = randomUUID();
   let apiKey: string | null = null;
   if (live) {
@@ -251,7 +252,7 @@ async function* mockStream(label: string, history: ChatTurn[], dropped: boolean,
     `This chat has ${history.length} message${history.length === 1 ? "" : "s"} of history` +
     (dropped ? ", but older ones didn't fit and weren't sent." : ".") +
     (sources.length ? ` I found ${sources.length} matching passage${sources.length === 1 ? "" : "s"} in your files, e.g. ${sources[0].label} [S1].` : "") +
-    " Real answers appear once LIVE_MODELS=on and the API keys are set.";
+    " Real answers appear once this app's API key is set and LIVE_MODELS=on.";
   for (const w of reply.split(/(\s+)/)) {
     await new Promise((r) => setTimeout(r, 15));
     yield { delta: w };

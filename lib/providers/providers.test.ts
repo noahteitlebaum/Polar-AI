@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { anthropic } from "./anthropic";
 import { google } from "./google";
-import { apiKeyFor, isLive } from "./index";
+import { apiKeyFor, isLive, liveFor, liveProviders } from "./index";
 import { openai } from "./openai";
 import { readSse } from "./sse";
 import { normalizeTurns, type StreamArgs, type StreamEvent, type Usage } from "./types";
@@ -114,6 +114,17 @@ describe("live switch and keys", () => {
   it("is off unless LIVE_MODELS=on", () => {
     expect(isLive({})).toBe(false);
     expect(isLive({ LIVE_MODELS: "ON " })).toBe(true);
+  });
+  it("goes live per app: only providers with a key", () => {
+    const env = { LIVE_MODELS: "on", OPENAI_API_KEY: "sk-test" };
+    expect(liveFor("openai", env)).toBe(true);
+    expect(liveFor("anthropic", env)).toBe(false);
+    expect(liveProviders(env)).toEqual(["openai"]);
+    expect(liveFor("openai", { OPENAI_API_KEY: "sk-test" })).toBe(false);
+  });
+  it("maps a 404 to model_unavailable", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("no", { status: 404 })));
+    await expect(collect(openai.stream(args()))).rejects.toMatchObject({ code: "model_unavailable" });
   });
   it("reads keys from env only", () => {
     expect(apiKeyFor("google", { GEMINI_API_KEY: " g " })).toBe("g");

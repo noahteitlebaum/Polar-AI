@@ -19,7 +19,7 @@ export async function resetAction(prev: ResetState, formData: FormData): Promise
 
   if (intent === "back") return { step: "email", email };
   if (!isAllowedEmail(email)) {
-    return { step: "email", email, error: "Polar AI is only open to @uwo.ca email addresses." };
+    return { step: "email", email, error: "Orbit AI is only open to @uwo.ca email addresses." };
   }
 
   const supabase = await createClient();

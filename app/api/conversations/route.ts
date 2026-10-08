@@ -1,5 +1,5 @@
 import { isProvider } from "@/config/models";
-import { json, requireAppUser } from "@/lib/api";
+import { dbError, json, requireAppUser } from "@/lib/api";
 
 // GET /api/conversations?provider=anthropic → this app's chats, newest first.
 export async function GET(request: Request) {
@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     .eq("provider", provider)
     .order("updated_at", { ascending: false })
     .limit(200);
-  if (error) return json({ error: "load_failed" }, 500);
+  if (error) return dbError(error, "load_failed");
   return json({
     conversations: (data ?? []).map((c) => ({
       id: c.id, title: c.title, modelId: c.model_id, projectId: c.project_id, updatedAt: c.updated_at,

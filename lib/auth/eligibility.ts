@@ -1,4 +1,4 @@
-// Access rule: only addresses at the exact domain "uwo.ca" may use Polar AI.
+// Access rule: only addresses at the exact domain "uwo.ca" may use Orbit AI.
 // This proves the person controls a uwo.ca inbox; it does not prove current enrolment.
 
 const ALLOWED_DOMAIN = "uwo.ca";

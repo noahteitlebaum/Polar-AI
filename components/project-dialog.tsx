@@ -23,6 +23,7 @@ export function ProjectDialog({ open, initial, files, onClose, onSave, onDelete,
   const [name, setName] = useState("");
   const [instructions, setInstructions] = useState("");
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     const d = ref.current;
@@ -30,6 +31,7 @@ export function ProjectDialog({ open, initial, files, onClose, onSave, onDelete,
     if (open && !d.open) {
       setName(initial?.name ?? "");
       setInstructions(initial?.instructions ?? "");
+      setConfirmDelete(false);
       d.showModal();
     } else if (!open && d.open) d.close();
   }, [open, initial]);
@@ -85,7 +87,10 @@ export function ProjectDialog({ open, initial, files, onClose, onSave, onDelete,
 
         <div className="mt-6 flex items-center gap-2">
           {onDelete && (
-            <button type="button" onClick={onDelete} className="rounded-full px-4 py-2 text-sm text-danger hover:bg-danger-surface">Delete course</button>
+            <button type="button" onClick={() => (confirmDelete ? onDelete() : setConfirmDelete(true))}
+              className={`rounded-full px-4 py-2 text-sm text-danger hover:bg-danger-surface ${confirmDelete ? "bg-danger-surface font-medium" : ""}`}>
+              {confirmDelete ? "Delete course and its files?" : "Delete course"}
+            </button>
           )}
           <button type="button" onClick={onClose} className="ml-auto rounded-full px-4 py-2 text-sm font-medium hover:bg-surface-300">Cancel</button>
           <button type="submit" disabled={saving || !name.trim()} className="rounded-full bg-brand px-5 py-2 text-sm font-medium text-on-brand transition hover:bg-brand-strong disabled:opacity-40">

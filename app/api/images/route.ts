@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { IMAGE_MODELS, isProvider } from "@/config/models";
 import { isUuid, json, requireAppUser } from "@/lib/api";
 import { isProviderDisabled, overRateLimit, reserve, settle } from "@/lib/billing/budget";
-import { ADAPTERS, apiKeyFor, isLive } from "@/lib/providers";
+import { ADAPTERS, apiKeyFor, liveFor } from "@/lib/providers";
 import { ProviderError } from "@/lib/providers/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -22,7 +22,7 @@ export async function POST(request: Request): Promise<Response> {
   if (!prompt) return json({ error: "empty_message" }, 400);
   const imageModel = IMAGE_MODELS[provider];
   if (!imageModel) return json({ error: "no_image_model" }, 400);
-  const live = isLive();
+  const live = liveFor(provider);
   if (live && imageModel.pricePerImage == null) return json({ error: "not_configured" }, 503);
 
   // conversation

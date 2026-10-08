@@ -17,3 +17,17 @@ export const json = (body: unknown, status = 200) => Response.json(body, { statu
 export function isUuid(v: unknown): v is string {
   return typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 }
+
+// Supabase/Postgres errors that mean a migration hasn't been run (missing table, column or constraint change).
+const SETUP_CODES = new Set(["42P01", "42703", "23502", "PGRST204", "PGRST205", "42883"]);
+
+/** JSON error for a failed query. Missing-schema errors say which migration to run, so setup problems are obvious. */
+export function dbError(error: { code?: string } | null | undefined, fallback: string, status = 500) {
+  if (error?.code && SETUP_CODES.has(error.code)) {
+    return Response.json(
+      { error: "db_setup", message: "The database isn't fully set up. Run supabase/migrations/0001_core.sql and 0002_files_courses.sql in the Supabase SQL Editor." },
+      { status: 503 },
+    );
+  }
+  return Response.json({ error: fallback, code: error?.code }, { status });
+}

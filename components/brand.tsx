@@ -1,13 +1,15 @@
+import Image from "next/image";
 import type { ReactNode } from "react";
 import type { ProviderId } from "@/config/models";
 import { THEMES } from "@/config/themes";
 
-// Brand pieces from the Polar AI design system: wordmark, orbit backdrop, provider dots.
+// Brand pieces from the Orbit AI design system: wordmark, orbit backdrop, provider dots.
 
-export function Wordmark({ className = "text-lg" }: { className?: string }) {
+export function Wordmark({ className = "text-lg", markSize = 24 }: { className?: string; markSize?: number }) {
   return (
-    <span className={`font-bold tracking-tight text-ink ${className}`}>
-      Polar<span className="text-brand">-AI</span>
+    <span className={`inline-flex items-center gap-2 font-semibold tracking-tight text-ink ${className}`}>
+      <Image src="/brand/orbit-mark.png" alt="" width={markSize} height={markSize} className="logo-mono" style={{ width: markSize, height: markSize }} />
+      <span>Orbit <span className="text-brand">AI</span></span>
     </span>
   );
 }
@@ -45,7 +47,7 @@ export function OrbitBackdrop({ active, className = "", children }: {
   children?: ReactNode;
 }) {
   return (
-    <div className={`polar-orbit-glow relative overflow-hidden ${className}`}>
+    <div className={`orbit-glow relative overflow-hidden ${className}`}>
       <svg
         aria-hidden
         viewBox="0 0 100 100"
